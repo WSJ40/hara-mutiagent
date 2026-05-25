@@ -110,6 +110,31 @@ STAGE3A_DRIVING_FORCE_TERMS = (
 )
 STAGE3A_WEATHER_OR_VISIBILITY_ENV = ("降雨", "降雪", "冰雹", "雾霾", "沙尘暴", "夜间")
 STAGE3A_VISIBILITY_SPECIAL = ("玻璃上起雾", "夜晚路灯条件", "迎面强光")
+STAGE3A_SEC_IMPACT_TERMS = (
+    "影响SEC",
+    "影响S评级",
+    "影响E评级",
+    "影响C评级",
+    "影响严重度",
+    "影响暴露频率",
+    "影响可控性",
+    "提高S",
+    "提高E",
+    "提高C",
+    "降低S",
+    "降低E",
+    "降低C",
+)
+STAGE3A_NON_CAUSAL_TERMS = (
+    "不影响危害事件",
+    "不参与危害事件",
+    "不参与故障到危害事件",
+    "不参与因果链",
+    "不改变危害事件",
+    "不改变发生链路",
+    "不改变物理机制",
+)
+STAGE3A_INDOOR_SPECIAL_ELEMENTS = ("维修车间", "维修间", "展台")
 
 # Stage 3B SEC records columns (本阶段生成的 SEC 评级字段)
 SEC_RECORDS_COLUMNS = [
@@ -423,15 +448,43 @@ def add_stage1_semantic_warnings(
     function_name: str,
     field: str,
     fault_value: Any,
+    inference: dict[str, Any] | None,
     applicable: str,
     risk: str,
     warnings: list[dict[str, Any]] | None,
 ) -> None:
-    if warnings is None or is_nan_like(fault_value):
+    if warnings is None:
         return
 
     function_text = compact_text(function_name)
     fault_text = compact_text(fault_value)
+    inference_text = compact_text(
+        " ".join(
+            str(get_stage1_reasoning_value(inference, key, "") or "")
+            for key in STAGE1_REASONING_FIELDS
+        )
+        if isinstance(inference, dict)
+        else ""
+    )
+
+    if field == "方向错误" and text_equal_ignoring_space(applicable, "否"):
+        evidence_text = f"{function_text}{fault_text}{inference_text}"
+        for target_state, opposite_state in STAGE1_OPPOSITE_STATE_PAIRS:
+            target = compact_text(target_state)
+            opposite = compact_text(opposite_state)
+            if target not in evidence_text or opposite not in evidence_text:
+                continue
+            warnings.append({
+                "stage": stage,
+                "row": row_no,
+                "field": field,
+                "warning": "stage1_wrong_direction_nan_suspect",
+                "message": f"方向错误被判为不适用，但功能/推理文本中同时出现“{target_state}/{opposite_state}”互斥动作或状态；请按受控物理执行器是否存在相反输出复核，不能仅因当前功能名只包含一个方向就填 nan。",
+            })
+            break
+
+    if is_nan_like(fault_value):
+        return
 
     if (
         field == "过大"
@@ -697,6 +750,7 @@ def check_stage1_field_reasoning(
                 function_name=expected_name,
                 field=field,
                 fault_value=get_by_alias(derive_row, field),
+                inference=inference,
                 applicable=applicable,
                 risk=risk,
                 warnings=warnings,
@@ -1159,6 +1213,23 @@ def condition_is_related(value: Any) -> bool:
     return compact_text(value).startswith(compact_text("相关"))
 
 
+def condition_mentions_sec_impact(value: Any) -> bool:
+    text = compact_text(value).upper()
+    for term in STAGE3A_SEC_IMPACT_TERMS:
+        phrase = compact_text(term).upper()
+        start = text.find(phrase)
+        while start != -1:
+            if start == 0 or text[start - 1] != "不":
+                return True
+            start = text.find(phrase, start + len(phrase))
+    return False
+
+
+def condition_is_sec_only_related(value: Any) -> bool:
+    text = compact_text(value)
+    return condition_is_related(value) and contains_any(text, STAGE3A_NON_CAUSAL_TERMS) and condition_mentions_sec_impact(value)
+
+
 def contains_any(text: str, terms: tuple[str, ...] | set[str]) -> bool:
     return any(compact_text(term) in text for term in terms)
 
@@ -1193,6 +1264,7 @@ def check_stage3a_semantic_logic(scenarios: list[dict[str, Any]], errors: list[d
     """
     for index, row in enumerate(scenarios, start=1):
         row_no = get_by_alias(row, "List_No") or index
+        road_type = str(get_by_alias(row, "道路类型") or "").strip()
         road_condition = str(get_by_alias(row, "道路条件") or "").strip()
         environment = str(get_by_alias(row, "环境条件") or "").strip()
         vehicle_state = str(get_by_alias(row, "车辆状态") or "").strip()
@@ -1274,6 +1346,20 @@ def check_stage3a_semantic_logic(scenarios: list[dict[str, Any]], errors: list[d
             or "对向来车" in additional_text
             or text_equal_ignoring_space(special, "与对向来车距离较近")
         )
+        if (
+            contains_any(compact_text(special), STAGE3A_INDOOR_SPECIAL_ELEMENTS)
+            and road_type
+        ):
+            if not text_in_ignoring_space(road_type, {"不涉及", "ALL"}):
+                errors.append({
+                    "stage": "stage3a",
+                    "row": index,
+                    "List_No": row_no,
+                    "error": "indoor_special_element_conflicts_with_road_type",
+                    "road_type": road_type,
+                    "special": special,
+                    "message": "维修车间/维修间/展台属于特殊场所，不应同时保留城市支路等道路类型；保留特殊场所时，道路类型应为 不涉及，或改成真实道路场景。",
+                })
         if "对向车辆乘员" in hazard_text and collides_with_front_vehicle and not collides_with_oncoming:
             errors.append({
                 "stage": "stage3a",
@@ -1296,25 +1382,27 @@ def check_stage3a_semantic_logic(scenarios: list[dict[str, Any]], errors: list[d
             if environment and not text_in_ignoring_space(environment, {"不涉及", "ALL", "日间"}) and condition_is_related(env_reasoning):
                 is_wind_push = ("大风" in compact_text(environment) or "强侧面风" in compact_text(environment)) and contains_any(condition_text, {"推动", "外力"})
                 if not is_wind_push and contains_any(compact_text(environment), STAGE3A_WEATHER_OR_VISIBILITY_ENV):
+                    if not condition_is_sec_only_related(env_reasoning):
+                        errors.append({
+                            "stage": "stage3a",
+                            "row": index,
+                            "List_No": row_no,
+                            "error": "epb_roll_environment_marked_causal_without_causal_role",
+                            "environment": environment,
+                            "message": "EPB/驻车保持类溜车场景中，天气/能见度不能替代故障因果；若只影响暴露或可控性，应写为“相关，不影响危害事件因果链，但影响SEC的E/C评级，理由”。",
+                        })
+
+            special_reasoning = stage3a_condition_reasoning(row, "特殊要素")
+            if special and condition_is_related(special_reasoning) and contains_any(compact_text(special), STAGE3A_VISIBILITY_SPECIAL):
+                if not condition_is_sec_only_related(special_reasoning):
                     errors.append({
                         "stage": "stage3a",
                         "row": index,
                         "List_No": row_no,
-                        "error": "epb_roll_environment_marked_related_without_causal_role",
-                        "environment": environment,
-                        "message": "EPB/驻车保持类溜车场景中，天气/能见度不能替代故障因果；若只影响暴露或可控性，应在 Stage3A 标为 不涉及。",
+                        "error": "epb_roll_visibility_special_marked_causal_without_causal_role",
+                        "special": special,
+                        "message": "玻璃起雾、路灯、强光等视野条件不改变 EPB 驻车溜车的发生链路；若只影响驾驶员感知或可控性，应写为“相关，不影响危害事件因果链，但影响SEC的C评级，理由”。",
                     })
-
-            special_reasoning = stage3a_condition_reasoning(row, "特殊要素")
-            if special and condition_is_related(special_reasoning) and contains_any(compact_text(special), STAGE3A_VISIBILITY_SPECIAL):
-                errors.append({
-                    "stage": "stage3a",
-                    "row": index,
-                    "List_No": row_no,
-                    "error": "epb_roll_visibility_special_marked_related_without_causal_role",
-                    "special": special,
-                    "message": "玻璃起雾、路灯、强光等视野条件不改变 EPB 驻车溜车的发生链路；若只影响驾驶员感知或可控性，应标为 不涉及。",
-                })
 
 
 def check_stage3a_top_level(data: dict[str, Any], errors: list[dict[str, Any]]) -> None:
@@ -1427,6 +1515,15 @@ def check_stage3a_condition_consistency(
                     "field": scenario_field,
                     "actual": scenario_value,
                     "message": "该字段推理标记为不涉及，运行 --fix 可将场景字段规范化为 不涉及。",
+                })
+            if condition_is_not_applicable(reasoning_text) and condition_mentions_sec_impact(reasoning_text):
+                errors.append({
+                    "stage": "stage3a",
+                    "row": index,
+                    "error": "condition_marked_not_applicable_but_affects_sec",
+                    "field": condition_field,
+                    "actual": reasoning_text,
+                    "message": "该字段虽然不参与危害事件因果链，但推理已说明会影响 SEC 评级；应写为“相关，不影响危害事件因果链，但影响SEC的S/E/C评级，理由”。",
                 })
             if text_equal_ignoring_space(scenario_value, "不涉及") and not condition_is_not_applicable(reasoning_text):
                 errors.append({

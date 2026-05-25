@@ -50,6 +50,7 @@
   },
   "context_policy": {
     "stage1_worker": "只基于本文件中的 function 行生成一个功能的故障，不要加载完整 Stage0。",
+    "direction_error": "方向错误按受控物理执行器是否存在互斥相反输出判断；如夹紧/释放、拉起/释放、锁止/解锁。即使当前功能只负责触发 A，请求 A 却执行相反 B 仍应判为方向错误。",
     "output": "输出一个 Stage1 单功能片段：derive_mf 一行，field_reasoning 一行。",
     "validation": "使用 check_stage_json.py --stage stage1_slice 校验单功能片段；Stage1R 逐功能评审后再合并并用 --stage stage1 校验完整文件。"
   }

@@ -43,13 +43,14 @@ description: Stage 1 功能故障生成。用于基于 Stage 0 功能生成 outp
 - 故障描述必须是功能边界内的具体异常行为，不能只是功能名加通用引导词。
 - 对 `过大` 必须重点区分“故障类型是否适用”和“是否有安全风险”：只要功能输出可超过设计上限，`过大` 就适用并应填写 Stage1 故障描述；如果仅导致内部负荷、磨损或寿命降低，则 `是否有安全风险=否`，Stage2 不生成。
 - 对保持、约束、保护、制动、力、压力、扭矩类功能，重点复核 `过小`；这类通常有安全相关性。
+- 对 `方向错误` 必须先抽取受控物理执行器的目标状态 A 和相反状态 B；只要存在夹紧/释放、拉起/释放、锁止/解锁等互斥输出，`请求 A 却执行 B` 就适用。不要用“当前功能只负责 A”或“B 属于相邻功能”作为填 `nan` 的理由。
 
 ## 执行流程
 
 1. 从 Stage 0 行构建工作列表，并保留每个功能的 `detail_text`。
 2. 如果工作列表超过 1 个功能，先运行 `tools/hara/prepare_stage1_context.py`，为每个 `Function_ID` 生成独立上下文文件。
 3. 编排器按 `Function_ID` 拆分子 agent；单个 worker 只接收当前 `stage1_context_<Function_ID>.json` 和必要规则文件。
-4. 对当前功能识别实际输出：力、扭矩、状态、命令、信息、时机或方向。
+4. 对当前功能识别实际输出：力、扭矩、状态、命令、信息、时机或方向；若是状态/动作类输出，同时记录目标状态 A 与相反状态 B，供 `方向错误` 判断使用。
 5. 判断每种故障类型，并为每个字段记录 `field_reasoning`，包括 `nan` 字段。
 6. 单功能 worker 严格按 Stage1 片段契约写 `output/<RUN_ID>_stage1_<Function_ID>_derive_mf.json`；该文件必须只有一行 `derive_mf` 和一行 `field_reasoning`。
 7. 每个单功能片段写入后运行 `check_stage_json.py --stage stage1_slice --fix`；校验器可修正 `field_reasoning` 与可见故障字段的机械一致性，其他失败项交回当前 worker 修正。
