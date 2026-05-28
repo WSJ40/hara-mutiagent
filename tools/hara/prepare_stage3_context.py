@@ -14,6 +14,11 @@ import re
 from pathlib import Path
 from typing import Any
 
+try:
+    from hara_schema_columns import infer_system_code, stage3_mf_id_from_stage2_milf
+except ImportError:  # pragma: no cover
+    from .hara_schema_columns import infer_system_code, stage3_mf_id_from_stage2_milf
+
 
 DOMAIN_KEYWORDS = (
     "触发",
@@ -70,19 +75,41 @@ def infer_run_id(prefix: str | None, *paths: Path) -> str:
 
 
 def stage2_lookup(stage2_data: Any) -> dict[str, dict[str, Any]]:
-    return {
-        str(row.get("Milf_ID", "")).strip(): row
-        for row in rows(stage2_data, "mf_vehicle_hazards")
-        if str(row.get("Milf_ID", "")).strip()
-    }
+    system_code = infer_system_code(stage2_data)
+    lookup: dict[str, dict[str, Any]] = {}
+    for row in rows(stage2_data, "mf_vehicle_hazards"):
+        milf_id = str(row.get("Milf_ID", "")).strip()
+        if not milf_id:
+            continue
+        lookup[milf_id] = row
+        lookup[stage3_mf_id_from_stage2_milf(milf_id, system_code)] = row
+    return lookup
 
 
 def hazard_reasoning_lookup(stage2_data: Any) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
+    system_code = infer_system_code(stage2_data)
     for item in rows(stage2_data, "hazard_reasoning"):
         mf_id = str(item.get("Milf_ID", "")).strip()
         if mf_id:
             result[mf_id] = item
+            result[stage3_mf_id_from_stage2_milf(mf_id, system_code)] = item
+    return result
+
+
+def stage3_context_ids(stage2_data: Any) -> list[str]:
+    system_code = infer_system_code(stage2_data)
+    result: list[str] = []
+    seen: set[str] = set()
+    for row in rows(stage2_data, "mf_vehicle_hazards"):
+        milf_id = str(row.get("Milf_ID", "")).strip()
+        if not milf_id:
+            continue
+        mf_id = stage3_mf_id_from_stage2_milf(milf_id, system_code)
+        if mf_id in seen:
+            continue
+        seen.add(mf_id)
+        result.append(mf_id)
     return result
 
 
@@ -268,6 +295,9 @@ def build_mf_context(
 
     mf_row = mf_rows[mf_id]
     run_id = infer_run_id(prefix, stage2_path, stage0_path) if stage0_path else infer_run_id(prefix, stage2_path)
+    system_code = infer_system_code(stage2_data, run_id)
+    stage2_milf_id = str(mf_row.get("Milf_ID") or "").strip()
+    stage3_mf_id = stage3_mf_id_from_stage2_milf(stage2_milf_id, system_code)
     fid = mf_function_id(mf_row)
     function_context, matched_functions, function_context_file = load_function_context(stage1_context_dir, run_id, fid, stage0_data)
     if not matched_functions and stage0_data is not None:
@@ -291,13 +321,20 @@ def build_mf_context(
         "meta": {
             "run_id": run_id,
             "stage": "stage3_context",
-            "mf_id": mf_id,
+            "mf_id": stage3_mf_id,
+            "stage2_milf_id": stage2_milf_id,
             "function_id": fid,
             "source_files": source_files,
             "matched_function_count": len(matched_functions),
             "traceability_warnings": warnings,
         },
         "mf": mf_row,
+        "stage3_mf": {
+            "MF_ID": stage3_mf_id,
+            "Milf_ID": stage2_milf_id,
+            "故障描述": mf_row.get("故障描述"),
+            "整车危害": mf_row.get("整车级危害"),
+        },
         "hazard_reasoning": hazard_reasoning,
         "function_context": function_context,
         "matched_functions": [
@@ -306,7 +343,7 @@ def build_mf_context(
         ],
         "operating_domain_hints": extract_domain_hints(matched_functions),
         "context_policy": {
-            "stage3a": "只读取本文件、Stage3A 规则和 operation_scenarios.json；不要读取完整 Stage0/Stage2。",
+            "stage3a": "只读取本文件、Stage3A 规则和 operation_scenarios.json；MF_ID 必须使用 stage3_mf.MF_ID；故障描述和整车危害必须逐字复制 stage3_mf，不要重新生成。",
             "stage3ar": "只读取 Stage3A 当前 MF 文件、本文件摘要和场景评审规则；不要读取 SEC 评级知识库。",
             "stage3b": "只读取 Stage3A 当前 MF 文件、本文件摘要和必要风险评估章节。",
             "stage3br": "只读取 Stage3A/Stage3B 当前 MF 文件、本文件摘要和 SEC 评审规则。",
@@ -317,6 +354,7 @@ def build_mf_context(
 def context_brief(context: dict[str, Any]) -> dict[str, Any]:
     return {
         "mf": context.get("mf"),
+        "stage3_mf": context.get("stage3_mf"),
         "hazard_reasoning": context.get("hazard_reasoning"),
         "matched_functions": [
             compact_function(row, include_detail=False)
@@ -337,14 +375,14 @@ def write_mf_context(args: argparse.Namespace) -> None:
     stage1_context_dir = Path(args.stage1_context_dir) if args.stage1_context_dir else None
     if args.all:
         data = load_json(stage2_path)
-        mf_ids = sorted(stage2_lookup(data))
+        mf_ids = stage3_context_ids(data)
         if not mf_ids:
             raise SystemExit("No MF_ID found in Stage 2")
         out_dir = Path(args.out_dir)
         run_id = infer_run_id(args.prefix, stage2_path, stage0_path) if stage0_path else infer_run_id(args.prefix, stage2_path)
         for mf_id in mf_ids:
             context = build_mf_context(stage2_path, mf_id, stage1_context_dir, stage0_path, args.prefix)
-            out = out_dir / f"{run_id}_stage3_context_{mf_id}.json"
+            out = out_dir / f"{run_id}_stage3_context_{context['meta']['mf_id']}.json"
             dump_json(context, out)
             print(out)
         return
@@ -352,7 +390,7 @@ def write_mf_context(args: argparse.Namespace) -> None:
     if not args.mf_id:
         raise SystemExit("mf-context requires --mf-id or --all")
     context = build_mf_context(stage2_path, args.mf_id, stage1_context_dir, stage0_path, args.prefix)
-    out = Path(args.out) if args.out else Path(args.out_dir) / f"{context['meta']['run_id']}_stage3_context_{args.mf_id}.json"
+    out = Path(args.out) if args.out else Path(args.out_dir) / f"{context['meta']['run_id']}_stage3_context_{context['meta']['mf_id']}.json"
     dump_json(context, out)
     print(out)
 

@@ -113,6 +113,8 @@ Stage3AR 和 Stage3BR 是语义审查留痕文件，不作为最终交付结构�
 - `卡滞`
 - `方向错误`
 
+`No.` 必须为 `系统名_fc两位功能序号`（如 `EPB_fc01`）。非 `nan` 故障字段必须带 `MF<功能序号><两位故障字段序号>` 前缀（如 `MF101 EPB驻车时不能拉起`）。
+
 `field_reasoning` 结构（必须包含）：
 
 用于记录每个故障字段的推理过程，推理在结论之前生成。
@@ -193,6 +195,8 @@ Stage3AR 和 Stage3BR 是语义审查留痕文件，不作为最终交付结构�
 - `备注`
 
 `整车级危害` 必须逐字来自 `knowledge-base/automotive/hara/common/vehicle_hazards.json`。
+`Milf_ID` 最终由 `merge_stage2.py` 重排为 `系统名_Milf_三位序号`（如 `EPB_Milf_001`）。
+`故障描述` 必须逐字复制 `Stage1_Fault_Text`，不得在 Stage2 重新生成或拼接 `Milf_ID`。
 `hazard_reasoning[*].推理.选择的危害` 必须与对应行的 `整车级危害` 完全一致。
 
 ## Stage 3: hara
@@ -233,6 +237,7 @@ Stage3AR 和 Stage3BR 是语义审查留痕文件，不作为最终交付结构�
 合并后的每条 `hara` 记录应保留 `scenario_reasoning` 和 `sec_reasoning`，用于追溯 Stage3A 场景推理和 Stage3B SEC 推理。
 
 每个单独 MF 文件内 `List_No` 可从 1 开始；最终合并时由工具重排为全局连续序号。
+Stage3/Stage3A 的 `MF_ID` 必须使用 `系统名_MF_两位序号`（如 `EPB_MF_01`），由 Stage2 `Milf_ID` 的序号映射而来；`故障描述` 和 `整车危害` 必须从 Stage2 逐字继承。
 
 ## Stage 4: sg_sum
 
@@ -243,7 +248,6 @@ Stage3AR 和 Stage3BR 是语义审查留痕文件，不作为最终交付结构�
 `sg_sum` 固定列：
 
 - `SG_No`
-- `MF_ID`
 - `安全目标`
 - `ASIL Level`
 - `安全状态`
@@ -251,8 +255,8 @@ Stage3AR 和 Stage3BR 是语义审查留痕文件，不作为最终交付结构�
 - `FTTI(ms)`
 - `Comments`
 
-`sg_sum` 在同一 `MF_ID` 内按相同 `安全目标` 汇总。不同 MF 即使安全目标文字相同，也分别保留；`MF_ID` 必须是当前单个 MF，例如 `MF001`。
+`sg_sum` 由工具在内部按同一 `MF_ID` 内相同 `安全目标` 汇总。不同 MF 即使安全目标文字相同，也分别保留；Stage4 输出不包含 `MF_ID` 字段，来源 MF 写入 `Comments`。
 
 仅由 `QM` 场景组成的 MF/安全目标组合不得出现在 `sg_sum` 中。同一 MF/安全目标组合的 `ASIL Level` 取 HARA 中最高 ASIL，`FTTI(ms)` 取最小 FTTI。
 
-除 `操作模式` 外，Stage4 其他字段必须由工具从 HARA 的 MF_ID + 安全目标分组派生。`操作模式` 是 Stage4 唯一需要模型填写的字段，不能保留空值或 `待Stage4模型填写` 占位。
+除 `操作模式` 外，Stage4 其他字段必须由工具从 HARA 的内部 MF + 安全目标分组派生。`操作模式` 是 Stage4 唯一需要模型填写的字段，不能保留空值或 `待Stage4模型填写` 占位。

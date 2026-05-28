@@ -173,7 +173,7 @@ def merge_stage_json(stage_dir: Path, prefix: str) -> dict[str, Any]:
     mf_vehicle_hazards = dedupe_rows(mf_vehicle_hazards, ["Milf_ID", "故障描述", "整车级危害"])
     hara = dedupe_rows(hara, ["List_No", "MF_ID", "危害事件"])
     hara = renumber_rows(hara, "List_No")
-    sg_sum = dedupe_rows(sg_sum, ["SG_No", "MF_ID", "安全目标", "ASIL Level"])
+    sg_sum = dedupe_rows(sg_sum, ["SG_No", "安全目标", "ASIL Level"])
 
     return {
         "meta": {

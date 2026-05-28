@@ -308,14 +308,13 @@ def sg_from_hara_group(safety_goal: str, hara_rows: list[dict[str, Any]], sg_no:
     min_ftti = min_ftti_value(hara_rows)
     return {
         "SG_No": sg_no,
-        "MF_ID": mf_id,
         "安全目标": safety_goal,
         "ASIL Level": highest_asil,
         "安全状态": representative.get("安全状态") if not is_nan_like(representative.get("安全状态")) else default_safe_state(representative),
         "操作模式": operation_mode_from_hara(representative),
         "FTTI(ms)": min_ftti,
         "Comments": (
-            f"自动基于 MF_ID={mf_id} 中相同安全目标汇总；"
+            f"来源MF_ID={mf_id}；自动基于同一 MF 中相同安全目标汇总；"
             f"ASIL Level 取最高={highest_asil}；FTTI(ms) 取最小={min_ftti}；"
             f"代表场景 List_No={representative.get('List_No', 'nan')}；"
             f"操作模式参考：车辆状态={representative.get('车辆状态', 'nan')}，"
@@ -361,47 +360,27 @@ def correct_sg_sum(normalized: dict[str, Any]) -> list[dict[str, Any]]:
         })
         return warnings
 
-    existing_group_keys: set[str] = set()
-    existing_by_group: dict[str, dict[str, Any]] = {}
-    seen_existing: set[str] = set()
+    existing_by_sg_no: dict[str, dict[str, Any]] = {}
+    existing_by_unique_goal: dict[str, dict[str, Any]] = {}
+    existing_goal_counts: dict[str, int] = defaultdict(int)
     for index, row in enumerate(normalized.get("SG_Sum", []) or [], start=1):
-        mf_id = str(row.get("MF_ID") or "").strip()
+        if "MF_ID" in row:
+            row.pop("MF_ID", None)
+            warnings.append({
+                "level": "WARNING",
+                "stage": "sg_sum_auto_fix",
+                "sheet": "SG_Sum",
+                "row": index,
+                "message": "Stage4 不再输出 MF_ID 字段，已从 SG_Sum 行中移除。",
+            })
+        sg_no = str(row.get("SG_No") or "").strip()
         safety_goal = str(row.get("安全目标") or "").strip()
-        group_key = sg_group_key(mf_id, safety_goal) if mf_id else ""
-        if not group_key or not normalize_safety_goal_key(safety_goal):
-            warnings.append({
-                "level": "WARNING",
-                "stage": "sg_sum_auto_fix",
-                "sheet": "SG_Sum",
-                "row": index,
-                "message": "SG_Sum 行缺少 MF_ID 或安全目标，已丢弃并按 HARA 的 MF_ID + 安全目标自动重建。",
-            })
-            continue
-        if group_key in seen_existing:
-            warnings.append({
-                "level": "WARNING",
-                "stage": "sg_sum_auto_fix",
-                "sheet": "SG_Sum",
-                "row": index,
-                "MF_ID": mf_id,
-                "安全目标": safety_goal,
-                "message": "同一 MF_ID 内同一安全目标存在重复 SG_Sum 条目，最终 SG_Sum 已按 MF_ID + 安全目标汇总并去重。",
-            })
-            continue
-        seen_existing.add(group_key)
-        if group_key not in groups_by_mf_goal:
-            warnings.append({
-                "level": "WARNING",
-                "stage": "sg_sum_auto_fix",
-                "sheet": "SG_Sum",
-                "row": index,
-                "MF_ID": mf_id,
-                "安全目标": safety_goal,
-                "message": "SG_Sum 引用了 HARA 非 QM 行中不存在的 MF_ID + 安全目标组合，已丢弃。",
-            })
-            continue
-        existing_group_keys.add(group_key)
-        existing_by_group[group_key] = row
+        goal_key = normalize_safety_goal_key(safety_goal)
+        if sg_no:
+            existing_by_sg_no[sg_no] = row
+        if goal_key:
+            existing_goal_counts[goal_key] += 1
+            existing_by_unique_goal[goal_key] = row
 
     corrected: list[dict[str, Any]] = []
     sorted_groups = sorted(
@@ -411,33 +390,25 @@ def correct_sg_sum(normalized: dict[str, Any]) -> list[dict[str, Any]]:
             item[0],
         ),
     )
-    for group_key, group in sorted_groups:
-        row = sg_from_hara_group(group["安全目标"], group["rows"], "pending")
-        existing = existing_by_group.get(group_key)
+    for index, (group_key, group) in enumerate(sorted_groups, start=1):
+        sg_no = f"SG{index:03d}"
+        row = sg_from_hara_group(group["安全目标"], group["rows"], sg_no)
+        goal_key = normalize_safety_goal_key(group["安全目标"])
+        existing = existing_by_sg_no.get(sg_no)
+        if existing is None and existing_goal_counts.get(goal_key) == 1:
+            existing = existing_by_unique_goal.get(goal_key)
         if existing and not is_operation_mode_placeholder(existing.get("操作模式")):
             row["操作模式"] = existing.get("操作模式")
-        if group_key not in existing_group_keys:
-            warnings.append({
-                "level": "WARNING",
-                "stage": "sg_sum_auto_fix",
-                "sheet": "SG_Sum",
-                "MF_ID": group["MF_ID"],
-                "安全目标": group["安全目标"],
-                "message": "非 QM HARA 的 MF_ID + 安全目标缺少 SG_Sum 条目，已自动补齐。",
-            })
-        else:
-            warnings.append({
-                "level": "WARNING",
-                "stage": "sg_sum_auto_fix",
-                "sheet": "SG_Sum",
-                "MF_ID": group["MF_ID"],
-                "安全目标": group["安全目标"],
-                "message": "SG_Sum 条目已按同一 MF_ID 内相同安全目标自动汇总；ASIL Level 取最高，FTTI(ms) 取最小。",
-            })
+        warnings.append({
+            "level": "WARNING",
+            "stage": "sg_sum_auto_fix",
+            "sheet": "SG_Sum",
+            "source_MF_ID": group["MF_ID"],
+            "安全目标": group["安全目标"],
+            "message": "SG_Sum 已按同一 MF 内相同安全目标自动汇总；ASIL Level 取最高，FTTI(ms) 取最小；Stage4 输出不包含 MF_ID 字段。",
+        })
         corrected.append(row)
 
-    for index, row in enumerate(corrected, start=1):
-        row["SG_No"] = f"SG{index:03d}"
     normalized["SG_Sum"] = corrected
     return warnings
 

@@ -54,8 +54,8 @@ Orchestrator 会按顺序调用所有生成、Review、校验、合并和导出�
 #### 示例 3：只处理单个 MF 的 Stage 3A 场景
 
 ```text
-/hara-stage3a --run-id EPB_HARA --mf-id MF001
-/hara-stage3ar --run-id EPB_HARA --mf-id MF001
+/hara-stage3a --run-id EPB_HARA --mf-id EPB_MF_01
+/hara-stage3ar --run-id EPB_HARA --mf-id EPB_MF_01
 ```
 
 适用于调试某个 MF 的场景生成、运行域约束、危害事件表达和场景独立性。
@@ -63,8 +63,8 @@ Orchestrator 会按顺序调用所有生成、Review、校验、合并和导出�
 #### 示例 4：只处理单个 MF 的 Stage 3B 评级
 
 ```text
-/hara-stage3b --run-id EPB_HARA --mf-id MF001
-/hara-stage3br --run-id EPB_HARA --mf-id MF001
+/hara-stage3b --run-id EPB_HARA --mf-id EPB_MF_01
+/hara-stage3br --run-id EPB_HARA --mf-id EPB_MF_01
 ```
 
 适用于 Stage3A 已通过后，只重跑 S/E/C/FTTI、安全目标或安全状态。
@@ -72,8 +72,8 @@ Orchestrator 会按顺序调用所有生成、Review、校验、合并和导出�
 #### 示例 5：只做 Stage 3 合并校验
 
 ```text
-python tools/hara/merge_stage3.py --stage3a output/EPB_HARA_stage3a_MF001_scenarios.json --stage3b output/EPB_HARA_stage3b_MF001_sec.json --output output/EPB_HARA_stage3_MF001_hara.json
-python tools/hara/check_stage_json.py --stage stage3 --json output/EPB_HARA_stage3_MF001_hara.json --stage2 output/EPB_HARA_stage2_mf_vehicle_hazards.json --mf-id MF001 --operation-scenarios knowledge-base/automotive/hara/common/operation_scenarios.json --min-scenarios 10 --max-scenarios 20 --fix
+python tools/hara/merge_stage3.py --stage3a output/EPB_HARA_stage3a_EPB_MF_01_scenarios.json --stage3b output/EPB_HARA_stage3b_EPB_MF_01_sec.json --output output/EPB_HARA_stage3_EPB_MF_01_hara.json
+python tools/hara/check_stage_json.py --stage stage3 --json output/EPB_HARA_stage3_EPB_MF_01_hara.json --stage2 output/EPB_HARA_stage2_mf_vehicle_hazards.json --mf-id EPB_MF_01 --operation-scenarios knowledge-base/automotive/hara/common/operation_scenarios.json --min-scenarios 10 --max-scenarios 20 --fix
 ```
 
 适用于 Stage3AR 和 Stage3BR 已通过，且只需要检查 Stage3A/Stage3B 合并后的字段承接和一致性。
@@ -84,10 +84,10 @@ python tools/hara/check_stage_json.py --stage stage3 --json output/EPB_HARA_stag
 
 ```text
 # 1. 只重新生成该 MF 的场景
-/hara-stage3a --run-id EPB_HARA --mf-id MF005
+/hara-stage3a --run-id EPB_HARA --mf-id EPB_MF_05
 
 # 2. 重新评审该 MF 的场景
-/hara-stage3ar --run-id EPB_HARA --mf-id MF005
+/hara-stage3ar --run-id EPB_HARA --mf-id EPB_MF_05
 ```
 
 Stage3A 修正后，应重新运行 `check_stage_json.py --stage stage3a`，再进入 Stage3B。
@@ -96,10 +96,10 @@ Stage3A 修正后，应重新运行 `check_stage_json.py --stage stage3a`，再�
 
 ```text
 # 1. 只重跑该 MF 的评级
-/hara-stage3b --run-id EPB_HARA --mf-id MF005
+/hara-stage3b --run-id EPB_HARA --mf-id EPB_MF_05
 
 # 2. 重新评审该 MF 的评级
-/hara-stage3br --run-id EPB_HARA --mf-id MF005
+/hara-stage3br --run-id EPB_HARA --mf-id EPB_MF_05
 ```
 
 Stage3B 修正后，应重新运行 `check_stage_json.py --stage stage3b`，再合并 Stage3。
@@ -108,8 +108,8 @@ Stage3B 修正后，应重新运行 `check_stage_json.py --stage stage3b`，再�
 
 ```text
 /hara-stage2r --run-id EPB_HARA
-/hara-stage3ar --run-id EPB_HARA --mf-id MF001
-/hara-stage3br --run-id EPB_HARA --mf-id MF001
+/hara-stage3ar --run-id EPB_HARA --mf-id EPB_MF_01
+/hara-stage3br --run-id EPB_HARA --mf-id EPB_MF_01
 /hara-stage4r --run-id EPB_HARA
 ```
 
@@ -123,16 +123,16 @@ Stage3B 修正后，应重新运行 `check_stage_json.py --stage stage3b`，再�
 /hara-stage0
 /hara-stage1
 /hara-stage2
-/hara-stage3a --run-id EPB_HARA --mf-id MF001
-/hara-stage3b --run-id EPB_HARA --mf-id MF001
+/hara-stage3a --run-id EPB_HARA --mf-id EPB_MF_01
+/hara-stage3b --run-id EPB_HARA --mf-id EPB_MF_01
 /hara-stage4
 
 # 单独运行 Review
 /hara-stage0r
 /hara-stage1r
 /hara-stage2r
-/hara-stage3ar --run-id EPB_HARA --mf-id MF001
-/hara-stage3br --run-id EPB_HARA --mf-id MF001
+/hara-stage3ar --run-id EPB_HARA --mf-id EPB_MF_01
+/hara-stage3br --run-id EPB_HARA --mf-id EPB_MF_01
 /hara-stage4r
 ```
 

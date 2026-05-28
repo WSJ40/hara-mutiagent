@@ -15,10 +15,10 @@
   },
   "derive_mf": [
     {
-      "No.": 1,
+      "No.": "EPB_fc01",
       "子功能": "<Stage0功能名称>",
-      "功能丧失": "<具体故障描述或nan>",
-      "过大": "<具体故障描述或nan>",
+      "功能丧失": "MF101 <具体故障描述或nan>",
+      "过大": "MF102 <具体故障描述或nan>",
       "过早": "<具体故障描述或nan>",
       "过小": "<具体故障描述或nan>",
       "过晚": "<具体故障描述或nan>",
@@ -69,7 +69,7 @@
 
 - `meta.stage` 为 `stage1_slice`。
 - `meta.function_id` 为当前 `Function_ID`。
-- `derive_mf` 只能有 1 行，`No.` 为 `1`。
+- `derive_mf` 只能有 1 行，`No.` 为 `系统名_fc功能序号`，例如 `EPB_fc01`。
 - `field_reasoning` 只能有 1 行，`row` 为 `1`。
 - 单片校验命令使用 `check_stage_json.py --stage stage1_slice --function-id <Function_ID>`。
 
@@ -78,6 +78,13 @@
 ### derive_mf 约束
 
 `derive_mf` 字段以“完整输出 Schema（严格遵循）”为准，不得新增、合并、拆分或改名字段。
+
+编号约束：
+
+- `No.` 必须使用 `系统名_fc两位功能序号`，例如 `EPB_fc01`。
+- 每个非 `nan` 故障分析字段必须以 `MF<功能序号><两位故障字段序号>` 开头，例如第 1 个功能的第 1 个故障字段为 `MF101 EPB驻车时不能拉起`。
+- 故障字段序号按固定列顺序计算：`功能丧失`=01、`过大`=02、`过早`=03、`过小`=04、`过晚`=05、`非预期激活`=06、`卡滞`=07、`方向错误`=08。
+- `tools/hara/merge_stage1.py` 和 `check_stage_json.py --stage stage1 --fix` 会按 Stage0 顺序重排并修正这些编号。
 
 ### field_reasoning 结构（必须包含）
 

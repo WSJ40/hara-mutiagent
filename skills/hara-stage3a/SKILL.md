@@ -41,11 +41,11 @@ output/<RUN_ID>_stage3_context_<MF_ID>.json
 ## 执行流程
 
 1. 读取当前 MF 的 Stage3 context。
-2. 从 context 中提取 `mf`、`hazard_reasoning`、`function_context`、`matched_functions` 和 `operating_domain_hints`。
+2. 从 context 中提取 `stage3_mf`、`mf`、`hazard_reasoning`、`function_context`、`matched_functions` 和 `operating_domain_hints`。
 3. 读取 `references/json-contracts.md`、`references/stage3a-scenario-generation.md`、`references/vehicle-dynamics-rules.md`。
 4. 读取 `knowledge-base/automotive/hara/common/operation_scenarios.json`，场景枚举字段必须使用库内值。
 5. 先写 `max_asil_planning`，规划可信最高风险路径。
-6. 生成 10-20 条真实可信且不重复的场景和危害事件。
+6. 生成 10-20 条真实可信且不重复的场景和危害事件；所有场景的 `MF_ID` 使用 `stage3_mf.MF_ID`，`故障描述` 和 `整车危害` 分别逐字复制 `stage3_mf.故障描述`、`stage3_mf.整车危害`，不要重新生成。
 7. 写入 UTF-8 JSON，运行验证并只修正必要字段。
 
 ## 验证

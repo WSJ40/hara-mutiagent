@@ -34,13 +34,14 @@ description: Stage 1 功能故障生成。用于基于 Stage 0 功能生成 outp
 - 当 Stage 0 有多个功能时，编排器必须按功能拆分多个真实子 agent；每个分析 worker 只处理一个 `Function_ID` 的 `detail_text`，避免在同一上下文中生成多个功能的故障。
 - Stage0 切片必须由 `tools/hara/prepare_stage1_context.py` 生成。
 - 多 worker 输出先作为单功能片段保存；不要在 Stage1 生成后立即合并最终文件，必须先进入 Stage1R 单功能语义评审。
-- Stage1R 修正并复检所有单功能片段后，才由 `tools/hara/merge_stage1.py` 按 Stage0 顺序合并、重排 `No.` 和 `field_reasoning.row`，写入唯一的 `output/<RUN_ID>_stage1_derive_mf.json`。
+- Stage1R 修正并复检所有单功能片段后，才由 `tools/hara/merge_stage1.py` 按 Stage0 顺序合并、重排 `No.`、故障分析字段编号和 `field_reasoning.row`，写入唯一的 `output/<RUN_ID>_stage1_derive_mf.json`。
 - 输出结构只以 `references/json-contracts.md` 为准；`references/stage1-malfunction.md` 不定义 JSON Schema。
 - 必须逐项判断：`功能丧失`、`过大`、`过早`、`过小`、`过晚`、`非预期激活`、`卡滞`、`方向错误`。
 - `field_reasoning.推理.是否适用` 决定 Stage1 可见故障字段：`是` 时必须填写具体故障描述，`否` 时必须填写 `nan`。这里的“适用”只判断该故障类型是否能构成当前功能的功能级异常，不判断是否有安全风险。
 - `field_reasoning.推理.是否有安全风险` 只用于标记是否进入 Stage2：适用但无安全风险的故障仍保留在 Stage1，不进入 Stage2。
 - 只有对应故障类型在当前功能边界内确实不适用，且推理说明为什么不适用时，才能填写 `nan`。
 - 故障描述必须是功能边界内的具体异常行为，不能只是功能名加通用引导词。
+- `No.` 使用 `系统名_fc两位功能序号`，例如 `EPB_fc01`；非 `nan` 故障分析字段必须带 `MF<功能序号><两位故障字段序号>` 前缀，例如 `MF101 EPB驻车时不能拉起`。
 - 对 `过大` 必须重点区分“故障类型是否适用”和“是否有安全风险”：只要功能输出可超过设计上限，`过大` 就适用并应填写 Stage1 故障描述；如果仅导致内部负荷、磨损或寿命降低，则 `是否有安全风险=否`，Stage2 不生成。
 - 对保持、约束、保护、制动、力、压力、扭矩类功能，重点复核 `过小`；这类通常有安全相关性。
 - 对 `方向错误` 必须先抽取受控物理执行器的目标状态 A 和相反状态 B；只要存在夹紧/释放、拉起/释放、锁止/解锁等互斥输出，`请求 A 却执行 B` 就适用。不要用“当前功能只负责 A”或“B 属于相邻功能”作为填 `nan` 的理由。

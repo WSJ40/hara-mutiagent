@@ -21,7 +21,7 @@
 {
   "meta": {
     "run_id": "<RUN_ID>",
-    "mf_id": "<MF_ID>",
+    "mf_id": "EPB_MF_01",
     "stage": "stage3a",
     "generated_at": "ISO时间戳"
   },
@@ -34,9 +34,9 @@
   "scenarios": [
     {
       "List_No": 1,
-      "MF_ID": "<MF_ID>",
-      "故障描述": "<必须与 Stage2 当前 MF 一致>",
-      "整车危害": "<必须与 Stage2 当前 MF 一致>",
+      "MF_ID": "EPB_MF_01",
+      "故障描述": "<必须逐字复制 Stage2 当前 MF 的故障描述>",
+      "整车危害": "<必须逐字复制 Stage2 当前 MF 的整车级危害>",
       "道路类型": "<operation_scenarios.json 枚举值>",
       "道路条件": "<operation_scenarios.json 枚举值>",
       "环境条件": "<operation_scenarios.json 枚举值>",
@@ -80,6 +80,13 @@
 - `驾驶员是否在车上`
 - `危害事件`
 - `scenario_reasoning`
+
+## 追溯字段约束
+
+- `MF_ID` 必须使用 `系统名_MF_两位序号`，例如 `EPB_MF_01`；该编号由 Stage2 `Milf_ID` 的序号映射而来，例如 `EPB_Milf_001 -> EPB_MF_01`。
+- `故障描述` 必须逐字复制 Stage2 当前行的 `故障描述`。
+- `整车危害` 必须逐字复制 Stage2 当前行的 `整车级危害`。
+- Stage3A 只生成运行场景、危害事件和 `scenario_reasoning`；不要重新生成或改写故障描述/整车危害。
 
 ## max_asil_planning 约束
 
@@ -128,7 +135,7 @@
 
 `check_stage_json.py --stage stage3a --stage2 <Stage2文件> --fix` 会：
 
-- 校验 `meta.mf_id`、场景 `MF_ID`、`故障描述`、`整车危害` 与 Stage2 当前 MF 一致。
+- 校验 `meta.mf_id`、场景 `MF_ID`、`故障描述`、`整车危害` 与 Stage2 当前 MF 一致，其中 `MF_ID` 使用 `系统名_MF_两位序号`。
 - 校验 `List_No` 连续、顶层 key 固定、`max_asil_planning` 非空。
 - 根据 `scenario_reasoning.场景条件相关性检查` 将无关场景字段规范化为 `不涉及`。
 

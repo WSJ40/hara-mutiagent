@@ -14,6 +14,11 @@ import re
 from pathlib import Path
 from typing import Any
 
+try:
+    from hara_schema_columns import infer_system_code, stage1_function_no
+except ImportError:  # pragma: no cover
+    from .hara_schema_columns import infer_system_code, stage1_function_no
+
 
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8-sig"))
@@ -70,6 +75,7 @@ def build_context(
     run_id: str,
 ) -> dict[str, Any]:
     fid = function_id(function_row)
+    system_code = infer_system_code(stage0_data, run_id)
     return {
         "meta": {
             "run_id": run_id,
@@ -77,6 +83,7 @@ def build_context(
             "function_id": fid,
             "function_index": index,
             "function_count": total,
+            "expected_no": stage1_function_no(system_code, index),
             "source_files": {
                 "stage0": str(stage0_path),
             },
@@ -87,7 +94,7 @@ def build_context(
         "context_policy": {
             "stage1_worker": "只基于本文件中的 function 行生成一个功能的故障，不要加载完整 Stage0。",
             "direction_error": "方向错误按受控物理执行器是否存在互斥相反输出判断；如夹紧/释放、拉起/释放、锁止/解锁。即使当前功能只负责触发 A，请求 A 却执行相反 B 仍应判为方向错误。",
-            "output": "输出一个 Stage1 单功能片段：derive_mf 一行，field_reasoning 一行。",
+            "output": "输出一个 Stage1 单功能片段：derive_mf 一行，field_reasoning 一行。No. 使用 meta.expected_no；非 nan 故障字段使用 MF<功能序号><两位故障字段序号> 前缀。",
             "validation": "使用 check_stage_json.py --stage stage1_slice 校验单功能片段；Stage1R 逐功能评审后再合并并用 --stage stage1 校验完整文件。",
         },
     }

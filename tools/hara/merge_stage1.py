@@ -11,9 +11,25 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from hara_schema_columns import DERIVE_MF_COLUMNS, get_by_alias, normalize_row
+    from hara_schema_columns import (
+        DERIVE_MF_COLUMNS,
+        FAULT_FIELD_ORDER,
+        format_stage1_fault_text,
+        get_by_alias,
+        infer_system_code,
+        normalize_row,
+        stage1_function_no,
+    )
 except ImportError:  # pragma: no cover
-    from .hara_schema_columns import DERIVE_MF_COLUMNS, get_by_alias, normalize_row
+    from .hara_schema_columns import (
+        DERIVE_MF_COLUMNS,
+        FAULT_FIELD_ORDER,
+        format_stage1_fault_text,
+        get_by_alias,
+        infer_system_code,
+        normalize_row,
+        stage1_function_no,
+    )
 
 
 def load_json(path: Path) -> Any:
@@ -111,6 +127,7 @@ def merge_stage1(stage0_path: Path, slice_paths: list[Path], run_id: str) -> dic
     stage0_rows = rows(stage0_data, "function_mapping")
     if not stage0_rows:
         raise SystemExit("Stage0 function_mapping is empty or missing.")
+    system_code = infer_system_code(stage0_data, run_id)
 
     stage0_names: dict[str, str] = {}
     for index, row in enumerate(stage0_rows, start=1):
@@ -156,8 +173,10 @@ def merge_stage1(stage0_path: Path, slice_paths: list[Path], run_id: str) -> dic
         actual_name = str(row.get("子功能") or "").strip()
         if expected_name and actual_name != expected_name:
             raise SystemExit(f"Function name mismatch for {fid} in {path}: expected {expected_name}, actual {actual_name}")
-        row["No."] = index
+        row["No."] = stage1_function_no(system_code, index)
         row["子功能"] = expected_name
+        for fault_index, field in enumerate(FAULT_FIELD_ORDER, start=1):
+            row[field] = format_stage1_fault_text(row.get(field), index, fault_index)
         derive_mf.append(row)
 
         reasoning_rows = rows(data, "field_reasoning")
@@ -175,6 +194,7 @@ def merge_stage1(stage0_path: Path, slice_paths: list[Path], run_id: str) -> dic
         "meta": {
             "run_id": run_id,
             "stage": "stage1",
+            "system": system_code,
             "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
             "source_file": str(stage0_path),
             "source_slice_files": source_files,

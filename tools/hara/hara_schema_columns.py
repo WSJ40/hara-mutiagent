@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping
 
 NAN_VALUES = {"", "nan", "none", "null", "n/a", "na", "不适用", "无"}
@@ -55,7 +56,6 @@ HARA_COLUMNS = [
 
 SG_SUM_COLUMNS = [
     "SG_No",
-    "MF_ID",
     "安全目标",
     "ASIL Level",
     "安全状态",
@@ -70,6 +70,23 @@ SHEET_COLUMNS = {
     "HARA": HARA_COLUMNS,
     "SG_Sum": SG_SUM_COLUMNS,
 }
+
+FAULT_FIELD_ORDER = [
+    "功能丧失",
+    "过大",
+    "过早",
+    "过小",
+    "过晚",
+    "非预期激活",
+    "卡滞",
+    "方向错误",
+]
+
+SYSTEM_RE = re.compile(r"[^A-Za-z0-9]+")
+STAGE1_FAULT_PREFIX_RE = re.compile(r"^\s*MF\d+\s*[:：]?\s*")
+STAGE2_MILF_RE = re.compile(r"^(?P<system>[A-Za-z0-9]+)_Milf_(?P<seq>\d+)$", re.IGNORECASE)
+STAGE3_MF_RE = re.compile(r"^(?P<system>[A-Za-z0-9]+)_MF_(?P<seq>\d+)$", re.IGNORECASE)
+LEGACY_MF_RE = re.compile(r"^MF(?P<seq>\d+)$", re.IGNORECASE)
 
 EXCEL_DISPLAY_HEADERS = {
     "暴露频率'E'": "暴露频率\n'E'",
@@ -157,3 +174,104 @@ def normalize_row(row: Mapping[str, Any], columns: list[str]) -> dict[str, Any]:
 
 def normalize_rows(rows: list[Mapping[str, Any]], columns: list[str]) -> list[dict[str, Any]]:
     return [normalize_row(row, columns) for row in rows if isinstance(row, Mapping)]
+
+
+def normalize_system_code(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    # Prefer the leading ASCII system token, e.g. EPB from "EPB（电子驻车）".
+    leading = re.match(r"[A-Za-z0-9]+", text)
+    if leading:
+        return leading.group(0).upper()
+    cleaned = SYSTEM_RE.sub("", text)
+    return cleaned.upper()
+
+
+def infer_system_code(data: Any | None = None, run_id: str | None = None, default: str = "SYS") -> str:
+    if isinstance(data, Mapping):
+        meta = data.get("meta")
+        if isinstance(meta, Mapping):
+            for key in ("system", "system_name", "matched_system"):
+                system = normalize_system_code(meta.get(key))
+                if system:
+                    return system
+            meta_run_id = str(meta.get("run_id") or "").strip()
+            if meta_run_id and not run_id:
+                run_id = meta_run_id
+        for rows_key in ("function_mapping", "derive_mf", "mf_vehicle_hazards", "hara"):
+            value = data.get(rows_key)
+            if isinstance(value, list):
+                for row in value:
+                    if not isinstance(row, Mapping):
+                        continue
+                    for key in ("matched_system", "system_hint", "system", "source_system"):
+                        system = normalize_system_code(row.get(key))
+                        if system:
+                            return system
+
+    run_text = str(run_id or "").strip()
+    if run_text:
+        prefix = re.split(r"[_\-]", run_text, maxsplit=1)[0]
+        system = normalize_system_code(prefix)
+        if system:
+            return system
+    return default
+
+
+def stage1_function_no(system_code: str, function_index: int) -> str:
+    return f"{normalize_system_code(system_code)}_fc{function_index:02d}"
+
+
+def stage1_fault_code(function_index: int, fault_index: int) -> str:
+    return f"MF{function_index}{fault_index:02d}"
+
+
+def strip_stage1_fault_code(value: Any) -> str:
+    return STAGE1_FAULT_PREFIX_RE.sub("", str(value or "").strip())
+
+
+def format_stage1_fault_text(value: Any, function_index: int, fault_index: int) -> str:
+    text = strip_stage1_fault_code(value)
+    if is_nan_like(text):
+        return "nan"
+    return f"{stage1_fault_code(function_index, fault_index)} {text}".strip()
+
+
+def stage2_milf_id(system_code: str, sequence: int) -> str:
+    return f"{normalize_system_code(system_code)}_Milf_{sequence:03d}"
+
+
+def stage3_mf_id(system_code: str, sequence: int) -> str:
+    return f"{normalize_system_code(system_code)}_MF_{sequence:02d}"
+
+
+def mf_sequence_from_id(value: Any) -> int | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for pattern in (STAGE2_MILF_RE, STAGE3_MF_RE, LEGACY_MF_RE):
+        match = pattern.match(text)
+        if match:
+            return int(match.group("seq"))
+    match = re.search(r"(\d+)$", text)
+    return int(match.group(1)) if match else None
+
+
+def stage3_mf_id_from_stage2_milf(value: Any, system_code: str) -> str:
+    sequence = mf_sequence_from_id(value)
+    if sequence is None:
+        return str(value or "").strip()
+    return stage3_mf_id(system_code, sequence)
+
+
+def ids_equivalent(left: Any, right: Any) -> bool:
+    left_text = str(left or "").strip()
+    right_text = str(right or "").strip()
+    if not left_text or not right_text:
+        return False
+    if compact_key(left_text).lower() == compact_key(right_text).lower():
+        return True
+    left_sequence = mf_sequence_from_id(left_text)
+    right_sequence = mf_sequence_from_id(right_text)
+    return left_sequence is not None and left_sequence == right_sequence

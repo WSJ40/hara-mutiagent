@@ -11,9 +11,23 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from hara_schema_columns import MF_VEHICLE_HAZARDS_COLUMNS, get_by_alias, normalize_row
+    from hara_schema_columns import (
+        FAULT_FIELD_ORDER,
+        MF_VEHICLE_HAZARDS_COLUMNS,
+        get_by_alias,
+        infer_system_code,
+        normalize_row,
+        stage2_milf_id,
+    )
 except ImportError:  # pragma: no cover
-    from .hara_schema_columns import MF_VEHICLE_HAZARDS_COLUMNS, get_by_alias, normalize_row
+    from .hara_schema_columns import (
+        FAULT_FIELD_ORDER,
+        MF_VEHICLE_HAZARDS_COLUMNS,
+        get_by_alias,
+        infer_system_code,
+        normalize_row,
+        stage2_milf_id,
+    )
 
 
 def load_json(path: Path) -> Any:
@@ -99,14 +113,23 @@ def normalize_hazard_row(row: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def replace_description_mf_id(description: Any, mf_id: str) -> str:
-    text = str(description or "").strip()
-    if not text:
-        return f"{mf_id}："
-    replaced = re.sub(r"^MF\d{3}\s*[:：]\s*", f"{mf_id}：", text)
-    if replaced != text:
-        return replaced
-    return f"{mf_id}：{text}"
+def stage1_fault_lookup(stage1_data: Any | None) -> dict[tuple[int, str], str]:
+    if stage1_data is None:
+        return {}
+    lookup: dict[tuple[int, str], str] = {}
+    for row_index, row in enumerate(rows(stage1_data, "derive_mf"), start=1):
+        for field in FAULT_FIELD_ORDER:
+            value = str(get_by_alias(row, field) or "").strip()
+            if value and value.lower() != "nan":
+                lookup[(row_index, field)] = value
+    return lookup
+
+
+def stage1_fault_description(row: dict[str, Any]) -> str:
+    stage1_text = str(get_by_alias(row, "Stage1_Fault_Text") or "").strip()
+    if stage1_text:
+        return stage1_text
+    return str(get_by_alias(row, "故障描述") or "").strip()
 
 
 def dedupe_evidence(items: list[Any]) -> list[Any]:
@@ -121,11 +144,18 @@ def dedupe_evidence(items: list[Any]) -> list[Any]:
     return result
 
 
-def merge_stage2(stage0_path: Path, slice_paths: list[Path], run_id: str) -> dict[str, Any]:
+def merge_stage2(
+    stage0_path: Path,
+    slice_paths: list[Path],
+    run_id: str,
+    stage1_data: Any | None = None,
+) -> dict[str, Any]:
     stage0_data = load_json(stage0_path)
     stage0_rows = rows(stage0_data, "function_mapping")
     if not stage0_rows:
         raise SystemExit("Stage0 function_mapping is empty or missing.")
+    system_code = infer_system_code(stage0_data, run_id)
+    final_stage1_faults = stage1_fault_lookup(stage1_data)
 
     expected_ids: list[str] = []
     stage0_names: dict[str, str] = {}
@@ -170,14 +200,18 @@ def merge_stage2(stage0_path: Path, slice_paths: list[Path], run_id: str) -> dic
             raise SystemExit(f"hazard_reasoning count mismatch in {path}: expected {len(slice_hazards)}, actual {len(slice_reasoning)}")
 
         for local_index, source_row in enumerate(slice_hazards, start=1):
-            mf_id = f"MF{next_no:03d}"
+            mf_id = stage2_milf_id(system_code, next_no)
             row = normalize_hazard_row(source_row)
             row["No."] = next_no
             row["Milf_ID"] = mf_id
             row["Function_ID"] = fid
             row["source_function_name"] = expected_name
             row["Stage1_Row"] = stage1_row_index
-            row["故障描述"] = replace_description_mf_id(get_by_alias(row, "故障描述"), mf_id)
+            fault_field = str(get_by_alias(row, "Fault_Field") or "").strip()
+            stage1_fault = final_stage1_faults.get((stage1_row_index, fault_field))
+            if stage1_fault:
+                row["Stage1_Fault_Text"] = stage1_fault
+            row["故障描述"] = stage1_fault_description(row)
             hazards.append(row)
 
             reasoning = dict(slice_reasoning[local_index - 1])
@@ -193,6 +227,7 @@ def merge_stage2(stage0_path: Path, slice_paths: list[Path], run_id: str) -> dic
         "meta": {
             "run_id": run_id,
             "stage": "stage2",
+            "system": system_code,
             "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
             "source_file": str(stage0_path),
             "source_slice_files": source_files,
@@ -212,6 +247,7 @@ def merge_stage2(stage0_path: Path, slice_paths: list[Path], run_id: str) -> dic
 def main() -> int:
     parser = argparse.ArgumentParser(description="Merge Stage2 single-function slice outputs.")
     parser.add_argument("--stage0", required=True, help="Stage0 function mapping JSON")
+    parser.add_argument("--stage1", help="Final Stage1 derive_mf JSON; when present, Stage2 故障描述 is copied from it.")
     parser.add_argument("--inputs", nargs="*", help="Explicit Stage2 slice JSON files")
     parser.add_argument("--input-dir", help="Directory containing <RUN_ID>_stage2_<Function_ID>_mf_vehicle_hazards.json files")
     parser.add_argument("--prefix", help="RUN_ID/prefix for discovering slice files")
@@ -224,8 +260,14 @@ def main() -> int:
     slice_paths = collect_input_paths(Path(args.input_dir) if args.input_dir else None, args.inputs, run_id)
     if not slice_paths:
         raise SystemExit("No Stage2 slice files found.")
+    stage1_path = Path(args.stage1) if args.stage1 else None
+    if stage1_path is None and args.input_dir:
+        candidate = Path(args.input_dir) / f"{run_id}_stage1_derive_mf.json"
+        if candidate.exists():
+            stage1_path = candidate
+    stage1_data = load_json(stage1_path) if stage1_path else None
 
-    merged = merge_stage2(stage0_path, slice_paths, run_id)
+    merged = merge_stage2(stage0_path, slice_paths, run_id, stage1_data)
     dump_json(merged, Path(args.out))
     print(json.dumps({
         "ok": True,

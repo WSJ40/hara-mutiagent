@@ -4,10 +4,11 @@
 
 ## 派生边界
 
-`generate_stage4_sg.py` 从已通过 Stage3 校验的 HARA 中，在同一 `MF_ID` 内按相同 `安全目标` 汇总非 QM 场景，并派生以下字段：
+`generate_stage4_sg.py` 从已通过 Stage3 校验的 HARA 中，在同一 `MF_ID` 内按相同 `安全目标` 汇总非 QM 场景，但 Stage4 输出不包含 `MF_ID` 字段，来源 MF 写入 `Comments`。
+
+工具派生以下字段：
 
 - `SG_No`
-- `MF_ID`
 - `安全目标`
 - `ASIL Level`
 - `安全状态`
@@ -18,7 +19,7 @@
 
 - 同一 `MF_ID` 内相同 `安全目标` 只生成一条 SG_Sum。
 - 不同 `MF_ID` 即使安全目标文字相同，也分别生成 SG_Sum。
-- `MF_ID` 保持单个当前 MF，例如 `MF001`。
+- Stage4 行不输出 `MF_ID` 字段。
 - `ASIL Level` 取该 MF/安全目标组合内所有非 QM HARA 场景中的最高值。
 - `FTTI(ms)` 取该 MF/安全目标组合内所有非 QM HARA 场景中的最小数值。
 - `安全状态` 和 `Comments` 由工具从代表场景和分组证据派生。
@@ -63,7 +64,7 @@ python tools/hara/check_stage_json.py --stage stage4 --json output/<run_id>_stag
 
 `check_stage_json.py --stage stage4` 会检查：
 
-- 同一 `MF_ID` 内相同 `安全目标` 没有重复 SG_Sum。
+- Stage4 行不包含 `MF_ID` 字段。
 - `ASIL Level` 等于该 MF/安全目标组合在 HARA 中的最高 ASIL。
 - `FTTI(ms)` 等于该 MF/安全目标组合在 HARA 中的最小 FTTI。
 - 非 QM 的 MF/安全目标组合不缺失，QM-only 组合不进入 `sg_sum`。

@@ -1,6 +1,6 @@
 ---
 name: hara-stage4
-description: Stage 4 SG_Sum 汇总。用于在 Stage 3 HARA 通过校验后生成 output/<RUN_ID>_stage4_sg_sum.json；除“操作模式”由模型填写外，MF_ID、安全目标、ASIL Level、安全状态、FTTI 和 Comments 都必须由 generate_stage4_sg.py 从 HARA 派生；同一 MF 内相同安全目标汇总时 ASIL 取最高、FTTI 取最小。
+description: Stage 4 SG_Sum 汇总。用于在 Stage 3 HARA 通过校验后生成 output/<RUN_ID>_stage4_sg_sum.json；除“操作模式”由模型填写外，安全目标、ASIL Level、安全状态、FTTI 和 Comments 都必须由 generate_stage4_sg.py 从 HARA 派生；同一 MF 内相同安全目标汇总时 ASIL 取最高、FTTI 取最小；Stage4 输出不包含 MF_ID 字段。
 ---
 
 # Stage 4：SG_Sum 汇总
@@ -13,7 +13,7 @@ description: Stage 4 SG_Sum 汇总。用于在 Stage 3 HARA 通过校验后生�
 
 ## 职责边界
 
-Stage4 不是重新生成安全目标。先用 `generate_stage4_sg.py` 从已校验 HARA 派生 SG_Sum 草稿；工具在同一 `MF_ID` 内按相同 `安全目标` 汇总，`ASIL Level` 取该 MF/安全目标组合内的最高值，`FTTI(ms)` 取最小值。不同 MF 即使安全目标文字相同，也分别保留。大模型只填写 `操作模式` 字段，不改 `MF_ID`、`安全目标`、`ASIL Level`、`安全状态`、`FTTI(ms)`、`Comments`、`SG_No`。
+Stage4 不是重新生成安全目标。先用 `generate_stage4_sg.py` 从已校验 HARA 派生 SG_Sum 草稿；工具在同一 `MF_ID` 内按相同 `安全目标` 汇总，`ASIL Level` 取该 MF/安全目标组合内的最高值，`FTTI(ms)` 取最小值。不同 MF 即使安全目标文字相同，也分别保留，但 Stage4 输出行不包含 `MF_ID` 字段，来源 MF 写入 `Comments`。大模型只填写 `操作模式` 字段，不改 `安全目标`、`ASIL Level`、`安全状态`、`FTTI(ms)`、`Comments`、`SG_No`。
 
 ## 输入输出
 

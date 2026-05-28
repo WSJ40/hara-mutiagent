@@ -6,6 +6,7 @@
 
 只使用当前 `stage3_context_<MF_ID>.json` 中的信息：
 
+- `stage3_mf`：Stage3 使用的 `MF_ID` 以及从 Stage2 逐字继承的故障描述、整车危害。
 - `mf`：当前 Stage2 MF 行。
 - `hazard_reasoning`：Stage2 的危害映射推理。
 - `function_context` 或 `matched_functions`：由 Stage1 context 复用来的功能背景。
@@ -18,6 +19,7 @@
 - 每个 MF 生成 10-20 条真实可信场景。
 - 只生成场景、危害事件、`scenario_reasoning` 和 `max_asil_planning`。
 - 不生成 S/E/C、ASIL、安全目标或安全状态。
+- 不重新生成故障描述和整车危害；每条场景必须逐字复制 `stage3_mf.故障描述` 和 `stage3_mf.整车危害`。
 - 场景应覆盖可信最高风险路径，而不是机械枚举道路、天气和车速组合。
 - 每条场景必须形成闭环：`当前 MF 故障 -> 整车危害 -> 运行场景中的危险输出/异常状态 -> 风险对象受伤风险`。如果移除当前 MF 故障后，同一危害事件仍会由天气、路面、交通或驾驶员行为自然发生，则该场景不是当前 MF 的有效 HARA 场景。
 

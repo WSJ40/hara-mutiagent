@@ -10,10 +10,40 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from hara_schema_columns import ALIASES, DERIVE_MF_COLUMNS, MF_VEHICLE_HAZARDS_COLUMNS, HARA_COLUMNS, SG_SUM_COLUMNS, get_by_alias, is_nan_like, normalize_rows
+    from hara_schema_columns import (
+        ALIASES,
+        DERIVE_MF_COLUMNS,
+        FAULT_FIELD_ORDER,
+        MF_VEHICLE_HAZARDS_COLUMNS,
+        HARA_COLUMNS,
+        SG_SUM_COLUMNS,
+        format_stage1_fault_text,
+        get_by_alias,
+        infer_system_code,
+        is_nan_like,
+        normalize_rows,
+        stage1_function_no,
+        stage2_milf_id,
+        stage3_mf_id_from_stage2_milf,
+    )
     from asil_matrix import ASIL_ORDER, asil_from_sec, normalize_asil, normalize_sec
 except ImportError:  # pragma: no cover
-    from .hara_schema_columns import ALIASES, DERIVE_MF_COLUMNS, MF_VEHICLE_HAZARDS_COLUMNS, HARA_COLUMNS, SG_SUM_COLUMNS, get_by_alias, is_nan_like, normalize_rows
+    from .hara_schema_columns import (
+        ALIASES,
+        DERIVE_MF_COLUMNS,
+        FAULT_FIELD_ORDER,
+        MF_VEHICLE_HAZARDS_COLUMNS,
+        HARA_COLUMNS,
+        SG_SUM_COLUMNS,
+        format_stage1_fault_text,
+        get_by_alias,
+        infer_system_code,
+        is_nan_like,
+        normalize_rows,
+        stage1_function_no,
+        stage2_milf_id,
+        stage3_mf_id_from_stage2_milf,
+    )
     from .asil_matrix import ASIL_ORDER, asil_from_sec, normalize_asil, normalize_sec
 
 STAGE1_GUIDE_COLUMNS = ["功能丧失", "过大", "过早", "过小", "过晚", "非预期激活", "卡滞", "方向错误"]
@@ -341,6 +371,15 @@ def find_stage0_function(stage0: Any | None, function_id: str | None) -> dict[st
     return None
 
 
+def find_stage0_function_index(stage0: Any | None, function_id: str | None) -> int | None:
+    if stage0 is None or not function_id:
+        return None
+    for index, row in enumerate(rows(stage0, "function_mapping"), start=1):
+        if text_equal_ignoring_space(stage0_function_id(row), function_id):
+            return index
+    return None
+
+
 def check_stage1_top_level(data: dict[str, Any], errors: list[dict[str, Any]], stage: str = "stage1") -> None:
     extra, missing = top_level_key_diff(data, STAGE1_TOP_LEVEL_KEYS)
     if extra:
@@ -364,9 +403,12 @@ def check_stage1_derive_rows(
     warnings: list[dict[str, Any]] | None = None,
     auto_fix: bool = False,
     stage: str = "stage1",
+    function_start_index: int = 1,
 ) -> None:
     check_required(derive_mf, DERIVE_MF_COLUMNS, stage, errors)
+    system_code = infer_system_code(stage0) if stage0 is not None else ""
     for index, row in enumerate(derive_mf, start=1):
+        function_index = function_start_index + index - 1
         for merged_field in STAGE1_MERGED_FAULT_FIELDS:
             if has_compact_key(row, merged_field):
                 errors.append({
@@ -377,16 +419,55 @@ def check_stage1_derive_rows(
                     "message": "幅值问题和时序问题必须拆开判断，不能使用合并字段。",
                 })
 
-        no_value = get_by_alias(row, "No.")
-        parsed_no = parse_positive_int(no_value)
-        if parsed_no != index:
-            errors.append({
-                "stage": stage,
-                "row": index,
-                "error": "no_must_be_consecutive",
-                "expected": index,
-                "actual": no_value,
-            })
+        if system_code:
+            no_value = get_by_alias(row, "No.")
+            expected_no = stage1_function_no(system_code, function_index)
+            if not text_equal_ignoring_space(no_value, expected_no):
+                if auto_fix:
+                    row["No."] = expected_no
+                    if warnings is not None:
+                        warnings.append({
+                            "stage": f"{stage}_auto_fix",
+                            "row": index,
+                            "warning": "stage1_no_reformatted",
+                            "old_value": no_value,
+                            "new_value": expected_no,
+                            "message": "已将 Stage1 No. 规范为 系统名_fc编号。",
+                        })
+                else:
+                    errors.append({
+                        "stage": stage,
+                        "row": index,
+                        "error": "no_must_be_system_fc_code",
+                        "expected": expected_no,
+                        "actual": no_value,
+                    })
+
+        for fault_index, field in enumerate(FAULT_FIELD_ORDER, start=1):
+            fault_value = get_by_alias(row, field)
+            expected_fault = format_stage1_fault_text(fault_value, function_index, fault_index)
+            if not text_equal_ignoring_space(fault_value, expected_fault):
+                if auto_fix:
+                    row[field] = expected_fault
+                    if warnings is not None:
+                        warnings.append({
+                            "stage": f"{stage}_auto_fix",
+                            "row": index,
+                            "field": field,
+                            "warning": "stage1_fault_text_numbered",
+                            "old_value": fault_value,
+                            "new_value": expected_fault,
+                            "message": "已将 Stage1 故障分析字段规范为 MF<功能序号><故障序号> 前缀。",
+                        })
+                else:
+                    errors.append({
+                        "stage": stage,
+                        "row": index,
+                        "field": field,
+                        "error": "fault_text_must_start_with_stage1_mf_code",
+                        "expected": expected_fault,
+                        "actual": fault_value,
+                    })
 
         for field in DERIVE_MF_COLUMNS:
             value = get_by_alias(row, field)
@@ -842,8 +923,20 @@ def check_stage1_slice(
             "function_id": effective_function_id,
         })
 
-    stage0_slice = {"function_mapping": [target_stage0_row]} if target_stage0_row else None
-    check_stage1_derive_rows(derive_mf, stage0_slice, errors, warnings, auto_fix=auto_fix, stage="stage1_slice")
+    function_index = find_stage0_function_index(stage0, effective_function_id) or 1
+    stage0_slice = {
+        "meta": get_by_compact_key(stage0, "meta") if isinstance(stage0, dict) else {},
+        "function_mapping": [target_stage0_row],
+    } if target_stage0_row else None
+    check_stage1_derive_rows(
+        derive_mf,
+        stage0_slice,
+        errors,
+        warnings,
+        auto_fix=auto_fix,
+        stage="stage1_slice",
+        function_start_index=function_index,
+    )
     check_stage1_field_reasoning(data, derive_mf, errors, warnings, auto_fix=auto_fix, stage="stage1_slice")
 
 
@@ -950,6 +1043,18 @@ def check_stage2_against_stage1_faults(
                 "expected": expected_fault_text,
                 "actual": stage1_fault_text,
             })
+        fault_description = str(get_by_alias(row, "故障描述") or "").strip()
+        if expected_fault_text and not text_equal_ignoring_space(fault_description, expected_fault_text):
+            errors.append({
+                "stage": stage,
+                "row": index,
+                "error": "fault_description_not_verbatim_from_stage1",
+                "Stage1_Row": stage1_row,
+                "Fault_Field": fault_field_text,
+                "expected": expected_fault_text,
+                "actual": fault_description,
+                "message": "Stage2 故障描述必须直接使用 Stage1 对应故障分析字段原文。",
+            })
 
 
 def check_stage2(
@@ -968,6 +1073,7 @@ def check_stage2(
     if not hazards and not allow_empty and (expected is None or expected > 0):
         errors.append({"stage": stage, "error": "mf_vehicle_hazards_empty"})
     check_required(hazards, MF_VEHICLE_HAZARDS_COLUMNS, stage, errors)
+    system_code = infer_system_code(data)
 
     for index, row in enumerate(hazards, start=1):
         no_value = get_by_alias(row, "No.")
@@ -979,6 +1085,28 @@ def check_stage2(
                 "error": "no_must_be_consecutive",
                 "expected": index,
                 "actual": no_value,
+            })
+        if stage == "stage2":
+            milf_id = get_by_alias(row, "Milf_ID")
+            expected_milf_id = stage2_milf_id(system_code, index)
+            if not text_equal_ignoring_space(milf_id, expected_milf_id):
+                errors.append({
+                    "stage": stage,
+                    "row": index,
+                    "error": "milf_id_must_be_system_milf_code",
+                    "expected": expected_milf_id,
+                    "actual": milf_id,
+                })
+        stage1_fault_text = str(get_by_alias(row, "Stage1_Fault_Text") or "").strip()
+        fault_description = str(get_by_alias(row, "故障描述") or "").strip()
+        if stage1_fault_text and fault_description and not text_equal_ignoring_space(fault_description, stage1_fault_text):
+            errors.append({
+                "stage": stage,
+                "row": index,
+                "error": "fault_description_not_verbatim_from_stage1_trace",
+                "expected": stage1_fault_text,
+                "actual": fault_description,
+                "message": "Stage2 故障描述必须直接使用 Stage1_Fault_Text。",
             })
 
     if warnings is not None:
@@ -1141,16 +1269,28 @@ def check_stage3(data: Any, min_scenarios: int, max_scenarios: int, mf_id: str |
 def check_stage3_against_stage2(data: Any, stage2: Any | None, errors: list[dict[str, Any]]) -> None:
     if stage2 is None:
         return
-    hazards = {
-        compact_text(row.get("Milf_ID")): row
-        for row in rows(stage2, "mf_vehicle_hazards")
-        if compact_text(row.get("Milf_ID"))
-    }
+    system_code = infer_system_code(stage2)
+    hazards: dict[str, dict[str, Any]] = {}
+    for row in rows(stage2, "mf_vehicle_hazards"):
+        milf_id = str(row.get("Milf_ID") or "").strip()
+        if not milf_id:
+            continue
+        hazards[compact_text(milf_id)] = row
+        hazards[compact_text(stage3_mf_id_from_stage2_milf(milf_id, system_code))] = row
     for index, row in enumerate(rows(data, "hara"), start=1):
         mf_id = str(row.get("MF_ID", "")).strip()
         expected = hazards.get(compact_text(mf_id))
         if expected is None:
             continue
+        expected_stage3_mf_id = stage3_mf_id_from_stage2_milf(expected.get("Milf_ID"), system_code)
+        if expected_stage3_mf_id and not text_equal_ignoring_space(mf_id, expected_stage3_mf_id):
+            errors.append({
+                "stage": "stage3",
+                "row": index,
+                "error": "mf_id_must_be_system_mf_code",
+                "expected": expected_stage3_mf_id,
+                "actual": mf_id,
+            })
         expected_fault = str(expected.get("故障描述", "")).strip()
         expected_hazard = str(expected.get("整车级危害", "")).strip()
         actual_fault = str(row.get("故障描述", "")).strip()
@@ -1198,11 +1338,15 @@ def check_stage3_operation_scenarios(data: Any, operation_scenarios: Any | None,
 def stage2_mf_lookup(stage2: Any | None) -> dict[str, dict[str, Any]]:
     if stage2 is None:
         return {}
-    return {
-        compact_text(get_by_alias(row, "Milf_ID")): row
-        for row in rows(stage2, "mf_vehicle_hazards")
-        if compact_text(get_by_alias(row, "Milf_ID"))
-    }
+    system_code = infer_system_code(stage2)
+    lookup: dict[str, dict[str, Any]] = {}
+    for row in rows(stage2, "mf_vehicle_hazards"):
+        milf_id = str(get_by_alias(row, "Milf_ID") or "").strip()
+        if not milf_id:
+            continue
+        lookup[compact_text(milf_id)] = row
+        lookup[compact_text(stage3_mf_id_from_stage2_milf(milf_id, system_code))] = row
+    return lookup
 
 
 def condition_is_not_applicable(value: Any) -> bool:
@@ -1458,9 +1602,27 @@ def check_stage3a_against_stage2(
     if expected is None:
         errors.append({"stage": "stage3a", "error": "mf_id_not_found_in_stage2", "MF_ID": mf_id})
         return
+    system_code = infer_system_code(stage2)
+    expected_stage3_mf_id = stage3_mf_id_from_stage2_milf(get_by_alias(expected, "Milf_ID"), system_code)
+    if expected_stage3_mf_id and not text_equal_ignoring_space(mf_id, expected_stage3_mf_id):
+        errors.append({
+            "stage": "stage3a",
+            "error": "mf_id_must_be_system_mf_code",
+            "expected": expected_stage3_mf_id,
+            "actual": mf_id,
+        })
     expected_fault = str(get_by_alias(expected, "故障描述") or "").strip()
     expected_hazard = str(get_by_alias(expected, "整车级危害") or "").strip()
     for index, row in enumerate(scenarios, start=1):
+        actual_mf_id = str(get_by_alias(row, "MF_ID") or "").strip()
+        if expected_stage3_mf_id and not text_equal_ignoring_space(actual_mf_id, expected_stage3_mf_id):
+            errors.append({
+                "stage": "stage3a",
+                "row": index,
+                "error": "scenario_mf_id_must_be_system_mf_code",
+                "expected": expected_stage3_mf_id,
+                "actual": actual_mf_id,
+            })
         actual_fault = str(get_by_alias(row, "故障描述") or "").strip()
         actual_hazard = str(get_by_alias(row, "整车危害") or "").strip()
         if expected_fault and not text_equal_ignoring_space(actual_fault, expected_fault):
@@ -2390,10 +2552,35 @@ def expected_stage4_sg_groups(hara_rows: list[dict[str, Any]]) -> dict[str, dict
     return groups
 
 
+def expected_stage4_sg_rows(hara_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups = expected_stage4_sg_groups(hara_rows)
+    expected_rows: list[dict[str, Any]] = []
+    for index, (_group_key, group) in enumerate(
+        sorted(groups.items(), key=lambda item: (item[1]["MF_ID"], item[0])),
+        start=1,
+    ):
+        expected_rows.append({
+            "SG_No": f"SG{index:03d}",
+            "source_MF_ID": group["MF_ID"],
+            "安全目标": group["安全目标"],
+            "ASIL Level": group["ASIL Level"],
+            "FTTI(ms)": group["FTTI(ms)"],
+            "ftti_number": group["ftti_number"],
+        })
+    return expected_rows
+
+
 def check_stage4(data: Any, hara_data: Any | None, errors: list[dict[str, Any]], warnings: list[dict[str, Any]]) -> None:
     sg_sum = rows(data, "sg_sum")
-    seen_group_keys: set[str] = set()
+    seen_sg_no: set[str] = set()
     for index, row in enumerate(sg_sum, start=1):
+        if has_compact_key(row, "MF_ID"):
+            errors.append({
+                "stage": "stage4",
+                "row": index,
+                "error": "mf_id_field_not_allowed",
+                "message": "Stage4 SG_Sum 不再输出 MF_ID 字段；来源 MF 可保留在 Comments 中。",
+            })
         missing = missing_fields(row, SG_SUM_COLUMNS)
         if missing:
             warnings.append({
@@ -2401,27 +2588,33 @@ def check_stage4(data: Any, hara_data: Any | None, errors: list[dict[str, Any]],
                 "row": index,
                 "warning": "missing_required_fields_auto_fixable",
                 "fields": missing,
-                "message": "最终 validate_hara_json.py 会基于 HARA 的 MF_ID + 安全目标分组重建或修正 SG_Sum。",
+                "message": "最终 validate_hara_json.py 会基于 HARA 内部 MF + 安全目标分组重建或修正 SG_Sum。",
             })
-        group_key = sg_summary_group_key(row.get("MF_ID"), row.get("安全目标"))
-        if group_key:
-            if group_key in seen_group_keys:
+        sg_no = str(row.get("SG_No") or "").strip()
+        if sg_no:
+            if sg_no in seen_sg_no:
                 errors.append({
                     "stage": "stage4",
                     "row": index,
-                    "error": "duplicate_mf_safety_goal_summary",
-                    "MF_ID": row.get("MF_ID"),
-                    "安全目标": row.get("安全目标"),
-                    "message": "SG_Sum 应按同一 MF_ID 内相同安全目标汇总；同一 MF_ID + 安全目标只能保留一条。",
+                    "error": "duplicate_sg_no",
+                    "SG_No": sg_no,
                 })
-            seen_group_keys.add(group_key)
+            seen_sg_no.add(sg_no)
+            expected_sg_no = f"SG{index:03d}"
+            if not text_equal_ignoring_space(sg_no, expected_sg_no):
+                errors.append({
+                    "stage": "stage4",
+                    "row": index,
+                    "error": "sg_no_must_be_consecutive",
+                    "expected": expected_sg_no,
+                    "actual": sg_no,
+                })
         operation_mode = str(row.get("操作模式") or "").strip()
         if is_nan_like(operation_mode) or text_in_ignoring_space(operation_mode, OPERATION_MODE_PLACEHOLDERS):
             errors.append({
                 "stage": "stage4",
                 "row": index,
                 "error": "operation_mode_missing_or_placeholder",
-                "MF_ID": row.get("MF_ID"),
                 "安全目标": row.get("安全目标"),
                 "message": "Stage4 只允许大模型填写操作模式；运行 check 前必须把占位值替换为具体操作模式。",
             })
@@ -2439,31 +2632,38 @@ def check_stage4(data: Any, hara_data: Any | None, errors: list[dict[str, Any]],
                 "stage": "stage4",
                 "row": index,
                 "warning": "qm_safety_goal_will_be_removed_from_sg_sum",
-                "MF_ID": row.get("MF_ID"),
                 "安全目标": row.get("安全目标"),
             })
 
     if hara_data is None:
         return
-    expected_groups = expected_stage4_sg_groups(rows_any(hara_data, "hara", "HARA"))
-    actual_group_keys = {
-        sg_summary_group_key(row.get("MF_ID"), row.get("安全目标"))
-        for row in sg_sum
-        if sg_summary_group_key(row.get("MF_ID"), row.get("安全目标"))
-    }
-    for index, row in enumerate(sg_sum, start=1):
-        group_key = sg_summary_group_key(row.get("MF_ID"), row.get("安全目标"))
-        if not group_key:
-            warnings.append({
+    expected_rows = expected_stage4_sg_rows(rows_any(hara_data, "hara", "HARA"))
+    if len(sg_sum) != len(expected_rows):
+        warnings.append({
+            "stage": "stage4",
+            "warning": "sg_sum_row_count_mismatch_auto_fixable",
+            "expected_from_hara": len(expected_rows),
+            "actual": len(sg_sum),
+            "message": "最终 validate_hara_json.py 会按 HARA 内部 MF + 安全目标分组重建 SG_Sum。",
+        })
+    for index, (row, expected) in enumerate(zip(sg_sum, expected_rows), start=1):
+        if not text_equal_ignoring_space(row.get("SG_No"), expected["SG_No"]):
+            errors.append({
                 "stage": "stage4",
                 "row": index,
-                "warning": "sg_mf_id_or_safety_goal_missing_auto_fixable",
-                "message": "SG_Sum 行缺少 MF_ID 或安全目标，最终会按 HARA 的 MF_ID + 安全目标重建。",
+                "error": "sg_no_mismatch_with_hara_group_order",
+                "expected": expected["SG_No"],
+                "actual": row.get("SG_No"),
             })
-            continue
-        expected = expected_groups.get(group_key)
-        if expected is None:
-            continue
+        if not text_equal_ignoring_space(row.get("安全目标"), expected["安全目标"]):
+            errors.append({
+                "stage": "stage4",
+                "row": index,
+                "error": "sg_safety_goal_mismatch_with_hara_group",
+                "source_MF_ID": expected["source_MF_ID"],
+                "actual": row.get("安全目标"),
+                "expected": expected["安全目标"],
+            })
         actual_asil = normalize_asil(row.get("ASIL Level"))
         expected_asil = expected["ASIL Level"]
         if actual_asil != expected_asil:
@@ -2471,7 +2671,7 @@ def check_stage4(data: Any, hara_data: Any | None, errors: list[dict[str, Any]],
                 "stage": "stage4",
                 "row": index,
                 "error": "sg_asil_mismatch_with_mf_safety_goal_highest",
-                "MF_ID": row.get("MF_ID"),
+                "source_MF_ID": expected["source_MF_ID"],
                 "安全目标": row.get("安全目标"),
                 "actual": row.get("ASIL Level"),
                 "expected_highest_from_hara": expected_asil,
@@ -2484,34 +2684,21 @@ def check_stage4(data: Any, hara_data: Any | None, errors: list[dict[str, Any]],
                     "stage": "stage4",
                     "row": index,
                     "error": "sg_ftti_not_min_for_mf_safety_goal",
-                    "MF_ID": row.get("MF_ID"),
+                    "source_MF_ID": expected["source_MF_ID"],
                     "安全目标": row.get("安全目标"),
                     "actual": row.get("FTTI(ms)"),
                     "expected_min_from_hara": expected.get("FTTI(ms)"),
                 })
-        if not text_equal_ignoring_space(row.get("MF_ID"), expected["MF_ID"]):
+        comments = str(row.get("Comments") or "").strip()
+        if expected["source_MF_ID"] and expected["source_MF_ID"] not in comments:
             warnings.append({
                 "stage": "stage4",
                 "row": index,
-                "warning": "sg_mf_id_mismatch_auto_fixable",
+                "warning": "sg_comments_missing_source_mf_id",
                 "安全目标": row.get("安全目标"),
-                "actual": row.get("MF_ID"),
-                "expected": expected["MF_ID"],
+                "expected_source_MF_ID": expected["source_MF_ID"],
+                "message": "Stage4 不输出 MF_ID 字段，建议在 Comments 中保留来源 MF_ID 以便追溯。",
             })
-    missing = sorted(set(expected_groups) - actual_group_keys)
-    unknown = sorted(actual_group_keys - set(expected_groups))
-    if missing:
-        warnings.append({
-            "stage": "stage4",
-            "warning": "non_qm_mf_safety_goal_missing_sg_sum_entry_auto_fixable",
-            "mf_safety_goal_keys": missing,
-        })
-    if unknown:
-        warnings.append({
-            "stage": "stage4",
-            "warning": "sg_sum_references_unknown_mf_safety_goal_will_be_removed",
-            "mf_safety_goal_keys": unknown,
-        })
 
 
 def main() -> int:

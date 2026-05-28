@@ -39,7 +39,7 @@ def build_stage4(prefix: str, source: str, normalized: dict[str, Any]) -> dict[s
             "stage": "stage4",
             "source": source,
             "generation": "deterministic_group_by_mf_and_safety_goal_highest_asil_min_ftti_except_operation_mode",
-            "operation_mode_policy": "only 操作模式 is model-filled; rows are grouped within each MF by safety goal with highest ASIL and minimum FTTI",
+            "operation_mode_policy": "only 操作模式 is model-filled; rows are grouped internally within each MF by safety goal, but Stage4 output omits MF_ID",
             "operation_modes_to_fill": operation_modes_to_fill,
             "warnings_count": len(normalized.get("Validation_Warnings", [])),
         },

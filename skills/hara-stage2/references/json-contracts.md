@@ -28,13 +28,13 @@
   "mf_vehicle_hazards": [
     {
       "No.": 1,
-      "Milf_ID": "MF001",
+      "Milf_ID": "EPB_Milf_001",
       "Function_ID": "F001",
       "source_function_name": "<Stage0/Stage1功能名称>",
       "Stage1_Row": 1,
       "Fault_Field": "功能丧失",
       "Stage1_Fault_Text": "<Stage1故障字段原文>",
-      "故障描述": "MF001：<功能名><故障行为>",
+      "故障描述": "<必须逐字复制 Stage1_Fault_Text，即 Stage1 对应故障分析字段原文>",
       "整车级危害": "<vehicle_hazards.json中的允许值>",
       "备注": ""
     }
@@ -42,7 +42,7 @@
   "hazard_reasoning": [
     {
       "row": 1,
-      "Milf_ID": "MF001",
+      "Milf_ID": "EPB_Milf_001",
       "推理": {
         "功能影响": "<故障后功能输出如何变化>",
         "车辆级后果": "<车辆运动/状态层面的后果>",
@@ -68,7 +68,7 @@
 - `mf_vehicle_hazards` 行数等于当前 Stage1 单功能片段中非 `nan` 且 `field_reasoning.推理.是否有安全风险=是` 的故障单元格数量。
 - 当前功能没有安全相关故障时，`mf_vehicle_hazards` 和 `hazard_reasoning` 可以为空数组；非 `nan` 但 `是否有安全风险=否` 的故障不进入本阶段。
 - 片段内 `No.` 从 1 开始连续。
-- 片段内 `Milf_ID` 可以本地连续；最终全局编号由 `merge_stage2.py` 重排。
+- 片段内 `Milf_ID` 可以本地连续；最终全局编号由 `merge_stage2.py` 重排为 `系统名_Milf_三位序号`，例如 `EPB_Milf_001`。
 - 片段内 `Stage1_Row` 可以填 `1`；最终合并时会更新为该功能在最终 Stage1 中的全局行号。
 
 ## 最终文件
@@ -81,7 +81,9 @@
 - `Milf_ID`
 - `hazard_reasoning.row`
 - `hazard_reasoning.Milf_ID`
-- `故障描述` 中的 MF 编号前缀
+- `故障描述`，最终值必须直接取 `Stage1_Fault_Text`
+
+当 `output/<RUN_ID>_stage1_derive_mf.json` 存在，或显式传入 `--stage1` 时，`merge_stage2.py` 会用最终 Stage1 的对应故障字段覆盖片段中的 `Stage1_Fault_Text` 和 `故障描述`。
 
 ## 行字段约束
 
@@ -99,6 +101,8 @@
 - `备注`
 
 追溯字段 `Function_ID`、`source_function_name`、`Stage1_Row`、`Fault_Field`、`Stage1_Fault_Text` 必须保留，用于 Stage3 精确提取 Stage0 `detail_text`。
+
+`故障描述` 必须与 `Stage1_Fault_Text` 逐字一致；Stage2 只新增 `Milf_ID` 与 `整车级危害`，不改写故障描述，也不把 `Milf_ID` 拼进故障描述。
 
 ## 推理约束
 
