@@ -76,23 +76,9 @@ Stage3AR 和 Stage3BR 是语义审查留痕文件，不作为最终交付结构�
 
 - `Function_ID`
 - `extracted_function_name`
-- `function_category`
-- `remark`
-- `function_description`
-- `source_table`
-- `source_evidence`
-- `section_id`
-- `section_title`
-- `detail_section_ids`
 - `detail_text`
-- `detail_evidence_blocks`
-- `is_hara_relevant`
-- `exclude_reason`
-- `system_hint`
-- `matched_system`
-- `match_confidence`
-- `match_reason`
-- `conflict_notes`
+
+Stage0 由 `tools/hara/generate_stage0_function_mapping.py` 脚本生成。行级字段保持最小化：ID、名称、描述分别对应 `Function_ID`、`extracted_function_name`、`detail_text`。功能全集只来自“功能清单”表格中列头为“功能”的列；正文子标题不新增功能，只进入匹配功能的 `detail_text`。
 
 ## Stage 1: derive_mf
 

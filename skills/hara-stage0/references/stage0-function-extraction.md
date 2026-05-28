@@ -1,13 +1,25 @@
 # Stage 0: 功能提取
 
-目标：从用户输入文本或功能文档中提取完整功能清单和每个功能的背景材料。Stage 0 不读取任何 HARA 知识库。
+目标：用确定性脚本从功能文档提取完整功能清单和每个功能的背景材料。Stage 0 不读取任何 HARA 知识库，也不调用大模型判断功能边界。
 
 ## 输入文档预处理
 
-如果输入是 `.docx`、`.doc`、`.pdf`、`.txt` 或 `.md` 文件，先规范化为抽取 JSON：
+如果输入是 `.docx`、`.doc`、`.pdf`、`.txt` 或 `.md` 文件，可以先规范化为抽取 JSON：
 
 ```text
 python tools/hara/extract_function_doc.py --input <function_doc_path> --out output/<run_id>_source_extraction.json
+```
+
+也可以直接让 Stage0 生成脚本读取原始文件：
+
+```text
+python tools/hara/generate_stage0_function_mapping.py --input <function_doc_path> --out output/<run_id>_stage0_function_mapping.json --run-id <run_id> --write-contexts
+```
+
+已有抽取 JSON 时：
+
+```text
+python tools/hara/generate_stage0_function_mapping.py --source-extraction output/<run_id>_source_extraction.json --out output/<run_id>_stage0_function_mapping.json --run-id <run_id> --write-contexts
 ```
 
 抽取 JSON 包含 `blocks` 和 `full_text`。常见 block 类型：
@@ -20,21 +32,21 @@ python tools/hara/extract_function_doc.py --input <function_doc_path> --out outp
 
 ## 提取规则
 
-1. 如果存在“功能清单”“功能列表”“功能性需求”等表格，优先把表格作为功能全集来源。
-2. 表格列通常包含 `功能`、`功能逻辑类/参数标定类`、`备注`。保留这些列到 `function_category` 和 `remark`，不要因为 `参数标定类` 自动排除该功能。
-3. **功能标题识别**：
-   - 主功能标题格式通常是：`<编号>.<编号> <功能名称>功能`，如 `2.3.1 静态开关拉起功能`
-   - 子章节标题（如 `2.3.1.1 工作电源挡位`、`2.3.1.2 功能逻辑`）**不是独立功能**，而是该功能的描述内容
-   - 只提取主功能标题（格式以 `...功能` 结尾），子章节内容应合并到主功能的 `detail_text` 中
-4. **detail_text 汇总**：
-   - 对于每个主功能，将其标题下直到下一个同级主功能标题前的所有子章节内容，汇总为该功能的 `detail_text`
-   - 包括：工作电源挡位、功能逻辑、触发条件、状态前提、动作结果、例外处理、提示信息、不响应条件等
-   - 保留子章节的标题作为 detail_text 中的分隔标识，便于后续阅读
-5. 如果清单中有功能但未找到详细章节，也要保留该功能，并在 `detail_text` 填 `nan`，在 `review_log` 记录缺少详细说明。
-6. 如果正文中出现清单没有列出的功能标题，保留为候选功能，`source_table` 填 `nan`，并在 `match_reason` 中说明来自正文章节。
+1. 功能全集只来自包含“功能清单”的表格。
+2. 在该表格内查找列头精确为 `功能` 的列，该列每一行就是一个功能名称。
+3. 不从正文标题中新增功能；正文标题只用于给清单功能绑定描述。
+4. **功能标题匹配**：
+   - 正文标题格式通常是 `<编号> <功能名称>`，如 `2.2 静态开关拉起` 或 `2.2 静态开关拉起功能`。
+   - 标题编号不固定，只要求是数字章节号。
+   - 匹配时忽略标题行和功能名中的空格。
+   - 功能名与标题名允许在末尾 `功能` 二字上有无差异。
+5. **detail_text 汇总**：
+   - 对每个清单功能，找到匹配功能标题后，将该标题及其所有子级标题和内容汇总为 `detail_text`。
+   - 包括：工作电源挡位、功能逻辑、触发条件、状态前提、动作结果、例外处理、提示信息、不响应条件等。
+   - 图片不放入 `detail_text`。
+   - 当出现下一个非该标题子级的标题时停止。
+6. 如果清单中有功能但未找到详细章节，也要保留该功能，并在 `detail_text` 填 `nan`，在 `review_log` 记录缺少详细说明。
 7. `非功能逻辑类`、诊断、标定、接口、日志、状态判断等不能从功能清单中删除。Stage 1 仍必须对该功能行进行故障分析；若某些引导词不适用，在对应单元格填 `nan`。
-8. `安全措施类` 功能不要默认删除。若它具有外部可观察车辆行为或会改变安全状态，应作为 HARA 候选功能；若只是内部保护策略说明，可作为相关功能背景。
-9. 根据功能名称、术语和原文线索判断系统类型；只允许通过目录名或文件名发现可用系统，不要读取无关系统知识库正文。
 
 `detail_text` 是后续阶段的重要背景。Stage 1/2/3 都必须优先用它判断故障、危害和场景合理性。
 
@@ -44,7 +56,8 @@ python tools/hara/extract_function_doc.py --input <function_doc_path> --out outp
 |---------|------|---------|
 | 子章节提取为功能 | 把 `工作电源挡位`、`功能逻辑` 等子章节提取为独立功能 | 只提取主功能标题（`...功能`），子章节内容合并到 `detail_text` |
 | 过度拆分 | 把一个功能的多个条件拆成多个子功能 | 保持功能完整性，所有描述内容放在一个功能的 `detail_text` 中 |
-| 编号混淆 | 把 `2.3.1.1`、`2.3.1.2` 当作功能编号 | 这些是子章节编号，功能编号应对应主功能 `2.3.1` |
+| 正文新增功能 | 清单没有该功能，但正文有看似功能的子标题 | 不新增；功能全集只来自“功能清单”表格 |
+| 编号混淆 | 把 `2.3.1.1`、`2.3.1.2` 当作功能编号 | 这些是子章节编号，应进入父功能 `detail_text` |
 
 ## 示例
 

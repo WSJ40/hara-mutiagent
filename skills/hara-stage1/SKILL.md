@@ -11,7 +11,7 @@ description: Stage 1 功能故障生成。用于基于 Stage 0 功能生成 outp
 
 ## 输入输出
 
-- 输入：`output/<RUN_ID>_stage0_function_mapping.json`。
+- 输入：`output/<RUN_ID>_stage0_function_mapping.json` 和当前 `output/<RUN_ID>_stage1_context_<Function_ID>.json`。
 - 最终输出：`output/<RUN_ID>_stage1_derive_mf.json`，由 Stage1R 语义评审后的单功能片段合并得到。
 - 多功能中间输入：`output/<RUN_ID>_stage1_context_<Function_ID>.json`。
 - 多功能中间输出：`output/<RUN_ID>_stage1_<Function_ID>_derive_mf.json`。
@@ -19,7 +19,7 @@ description: Stage 1 功能故障生成。用于基于 Stage 0 功能生成 outp
 
 ## 上下文加载
 
-1. 读取 Stage 0 JSON，提取 `Function_ID`、功能名称、`detail_text`、类别和备注。
+1. 读取当前 `stage1_context_<Function_ID>.json` 中的 `function`；该对象来自 Stage0 脚本生成的 `Function_ID`、功能名称和 `detail_text`。
 2. 读取 `references/json-contracts.md`，确认输出结构、顶层 key、字段名和一致性约束。
 3. 读取 `references/stage1-malfunction.md`，确认故障类型细则；不要从该文件推断或复制输出 Schema。
 4. 仅在需要时加载知识库：
@@ -32,7 +32,7 @@ description: Stage 1 功能故障生成。用于基于 Stage 0 功能生成 outp
 - `derive_mf` 行数必须等于 Stage 0 `function_mapping` 行数。
 - 每个功能生成一行。
 - 当 Stage 0 有多个功能时，编排器必须按功能拆分多个真实子 agent；每个分析 worker 只处理一个 `Function_ID` 的 `detail_text`，避免在同一上下文中生成多个功能的故障。
-- Stage0 切片必须由 `tools/hara/prepare_stage1_context.py` 生成。
+- Stage0 标准流程由 `tools/hara/generate_stage0_function_mapping.py --write-contexts` 直接生成单功能 context；只有旧 Stage0 文件缺少 context 时，才用 `tools/hara/prepare_stage1_context.py` 补生成。
 - 多 worker 输出先作为单功能片段保存；不要在 Stage1 生成后立即合并最终文件，必须先进入 Stage1R 单功能语义评审。
 - Stage1R 修正并复检所有单功能片段后，才由 `tools/hara/merge_stage1.py` 按 Stage0 顺序合并、重排 `No.`、故障分析字段编号和 `field_reasoning.row`，写入唯一的 `output/<RUN_ID>_stage1_derive_mf.json`。
 - 输出结构只以 `references/json-contracts.md` 为准；`references/stage1-malfunction.md` 不定义 JSON Schema。
@@ -48,8 +48,8 @@ description: Stage 1 功能故障生成。用于基于 Stage 0 功能生成 outp
 
 ## 执行流程
 
-1. 从 Stage 0 行构建工作列表，并保留每个功能的 `detail_text`。
-2. 如果工作列表超过 1 个功能，先运行 `tools/hara/prepare_stage1_context.py`，为每个 `Function_ID` 生成独立上下文文件。
+1. 从 Stage0 脚本生成的 `stage1_context_<Function_ID>.json` 构建工作列表，每个 context 只包含一个功能的描述。
+2. 如果 context 文件缺失，运行 `tools/hara/prepare_stage1_context.py` 从 Stage0 JSON 补齐。
 3. 编排器按 `Function_ID` 拆分子 agent；单个 worker 只接收当前 `stage1_context_<Function_ID>.json` 和必要规则文件。
 4. 对当前功能识别实际输出：力、扭矩、状态、命令、信息、时机或方向；若是状态/动作类输出，同时记录目标状态 A 与相反状态 B，供 `方向错误` 判断使用。
 5. 判断每种故障类型，并为每个字段记录 `field_reasoning`，包括 `nan` 字段。

@@ -1,13 +1,13 @@
 ---
 name: hara-stage0r
-description: Stage 0R 功能提取评审。用于在进入 Stage 1 前评审 output/<RUN_ID>_stage0_function_mapping.json 的完整性、功能边界准确性、子章节误提取、Function_ID 连续性、detail_text 质量和系统识别。
+description: 旧版 Stage 0R 功能提取评审留档。当前标准流程已由 generate_stage0_function_mapping.py 确定性生成 Stage0 并直接机器校验，通常不要再运行 Stage0R。
 ---
 
 # Stage 0R：功能提取评审
 
 ## 职责边界
 
-评审并在必要时修正 Stage 0。不要推导功能故障或整车危害。
+旧版人工评审入口。当前标准流程中 Stage 0 由脚本从“功能清单”表格确定性生成，机器校验通过后直接进入 Stage 1。除非用户明确要求人工复核旧 Stage0 文件，否则不要运行 Stage0R。
 
 ## 输入输出
 

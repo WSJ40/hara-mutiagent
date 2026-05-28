@@ -21,6 +21,7 @@
 常用命令：
 
 ```text
+python tools/hara/generate_stage0_function_mapping.py --input <function_doc_path> --out output/<run_id>_stage0_function_mapping.json --run-id <run_id> --source-out output/<run_id>_source_extraction.json --write-contexts
 python tools/hara/check_stage_json.py --stage stage0 --json output/<run_id>_stage0_function_mapping.json
 python tools/hara/check_stage_json.py --stage stage1 --json output/<run_id>_stage1_derive_mf.json --stage0 output/<run_id>_stage0_function_mapping.json --fix
 python tools/hara/check_stage_json.py --stage stage2_slice --json output/<run_id>_stage2_<Function_ID>_mf_vehicle_hazards.json --stage1 output/<run_id>_stage1_<Function_ID>_derive_mf.json --function-id <Function_ID> --fix

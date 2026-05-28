@@ -20,7 +20,7 @@ description: HARA 端到端流程编排与质量门禁。用于完整 HARA 分�
 
 ## 真正子 Agent 要求
 
-每个主阶段和 Review 阶段必须创建新的真实子 agent：
+除 Stage0 脚本生成外，每个主阶段和 Review 阶段必须创建新的真实子 agent：
 
 - 使用实际可用的 `Agent` 工具，`subagent_type=”claude”`，`run_in_background=true`。
 - 不要用同一个上下文”并行列多个任务”替代子 agent；不要把多个 stage 合并给同一个 worker。
@@ -76,7 +76,7 @@ Agent(
 | Stage 3A | `hara-stage3a` | `skills/hara-stage3a/references/json-contracts.md` |
 | Stage 3B | `hara-stage3b` | `skills/hara-stage3b/references/json-contracts.md` |
 | Stage 4 | `hara-stage4` | `skills/hara-stage4/references/json-contracts.md` |
-| Review | `hara-stage0r/1r/2r/3ar/3br/4r` | 对应 `references/*-review.md` 或人工审查留痕 |
+| Review | `hara-stage1r/2r/3ar/3br/4r` | 对应 `references/*-review.md` 或人工审查留痕 |
 
 子 agent 产物不符合 schema 时，编排器必须先让对应 worker 修复并重新验证，不能让下游 agent 猜测结构。
 
@@ -96,50 +96,49 @@ Agent(
 
 | 步骤 | Skill/工具 | 输入 | 输出 | 门禁 |
 |---|---|---|---|---|
-| 0 | `extract_function_doc.py` | Word/PDF/TXT/MD 源文档 | `output/<RUN_ID>_source_extraction.json` | 可选 |
-| 1 | `hara-stage0` | 源文本/路径 | `output/<RUN_ID>_stage0_function_mapping.json` | 验证 stage0 |
-| 2 | `hara-stage0r` | Stage 0 JSON，必要时加源文档 | `output/<RUN_ID>_stage0_review.json` | 必须通过 |
-| 3 | `prepare_stage1_context.py` + `hara-stage1` | Stage 0 JSON；按 `Function_ID` 拆分 | `output/<RUN_ID>_stage1_<Function_ID>_derive_mf.json` | 单片验证 |
-| 4 | `hara-stage1r` + `merge_stage1.py` + `merge_stage1_review.py` | Stage1 context + Stage1 单功能片段 | `output/<RUN_ID>_stage1_derive_mf.json`、`output/<RUN_ID>_stage1_review.json` | 单功能语义评审 + Stage1 合并后验证 |
-| 5 | `hara-stage2` | Stage0 + Stage1 单功能片段 | `output/<RUN_ID>_stage2_<Function_ID>_mf_vehicle_hazards.json` | 单片验证 |
-| 6 | `hara-stage2r` + `merge_stage2.py` + `merge_stage2_review.py` | Stage1 单功能片段 + Stage2 单功能片段 | `output/<RUN_ID>_stage2_mf_vehicle_hazards.json`、`output/<RUN_ID>_stage2_review.json` | 单功能语义评审 + Stage2 合并后验证 |
-| 7 | `prepare_stage3_context.py` | Stage1 context 目录 + Stage2 JSON | `output/<RUN_ID>_stage3_context_<MF_ID>.json` | 每个 MF 一个上下文 |
-| 8 | `hara-stage3a` | 当前 MF 的 Stage3 context | `output/<RUN_ID>_stage3a_<MF_ID>_scenarios.json` | 验证 stage3a |
-| 9 | `hara-stage3ar` | Stage3 context + Stage3A JSON | `output/<RUN_ID>_stage3a_<MF_ID>_review.json` | 场景语义评审通过 |
-| 10 | `hara-stage3b` | Stage3 context + Stage3A JSON | `output/<RUN_ID>_stage3b_<MF_ID>_sec.json` | 验证 stage3b |
-| 11 | `hara-stage3br` | Stage3A JSON + Stage3B SEC JSON | `output/<RUN_ID>_stage3b_<MF_ID>_review.json` | SEC 语义评审通过 |
-| 12 | `merge_stage3.py` + `check_stage_json.py` | Stage 3A + Stage 3B | `output/<RUN_ID>_stage3_<MF_ID>_hara.json` | 验证 stage3 + ASIL 一致性 |
-| 13 | `hara-stage4` | 所有 Stage 3 HARA 文件 | `output/<RUN_ID>_stage4_sg_sum.json` | 同一 MF 内按安全目标汇总 + 操作模式已填写 |
-| 14 | `hara-stage4r` | Stage 4 JSON + 必要 HARA 来源行 | `output/<RUN_ID>_stage4_review.json` | 操作模式评审通过 |
-| 15 | 合并/导出工具 | 所有阶段输出 | `output/<RUN_ID>.json`、`.xlsx` | 最终验证与导出 |
+| 0 | `generate_stage0_function_mapping.py` | Word/PDF/TXT/MD 源文档或 source_extraction JSON | `output/<RUN_ID>_stage0_function_mapping.json`、`output/<RUN_ID>_stage1_context_<Function_ID>.json` | 验证 stage0 |
+| 1 | `hara-stage1` | 当前 `stage1_context_<Function_ID>.json` | `output/<RUN_ID>_stage1_<Function_ID>_derive_mf.json` | 单片验证 |
+| 2 | `hara-stage1r` + `merge_stage1.py` + `merge_stage1_review.py` | Stage1 context + Stage1 单功能片段 | `output/<RUN_ID>_stage1_derive_mf.json`、`output/<RUN_ID>_stage1_review.json` | 单功能语义评审 + Stage1 合并后验证 |
+| 3 | `hara-stage2` | Stage1 单功能片段 + 当前 `stage1_context_<Function_ID>.json` | `output/<RUN_ID>_stage2_<Function_ID>_mf_vehicle_hazards.json` | 单片验证 |
+| 4 | `hara-stage2r` + `merge_stage2.py` + `merge_stage2_review.py` | Stage1 单功能片段 + Stage2 单功能片段 | `output/<RUN_ID>_stage2_mf_vehicle_hazards.json`、`output/<RUN_ID>_stage2_review.json` | 单功能语义评审 + Stage2 合并后验证 |
+| 5 | `prepare_stage3_context.py` | Stage1 context 目录 + Stage2 JSON | `output/<RUN_ID>_stage3_context_<MF_ID>.json` | 每个 MF 一个上下文 |
+| 6 | `hara-stage3a` | 当前 MF 的 Stage3 context | `output/<RUN_ID>_stage3a_<MF_ID>_scenarios.json` | 验证 stage3a |
+| 7 | `hara-stage3ar` | Stage3 context + Stage3A JSON | `output/<RUN_ID>_stage3a_<MF_ID>_review.json` | 场景语义评审通过 |
+| 8 | `hara-stage3b` | Stage3 context + Stage3A JSON | `output/<RUN_ID>_stage3b_<MF_ID>_sec.json` | 验证 stage3b |
+| 9 | `hara-stage3br` | Stage3A JSON + Stage3B SEC JSON | `output/<RUN_ID>_stage3b_<MF_ID>_review.json` | SEC 语义评审通过 |
+| 10 | `merge_stage3.py` + `check_stage_json.py` | Stage 3A + Stage 3B | `output/<RUN_ID>_stage3_<MF_ID>_hara.json` | 验证 stage3 + ASIL 一致性 |
+| 11 | `hara-stage4` | 所有 Stage 3 HARA 文件 | `output/<RUN_ID>_stage4_sg_sum.json` | 同一 MF 内按安全目标汇总 + 操作模式已填写 |
+| 12 | `hara-stage4r` | Stage 4 JSON + 必要 HARA 来源行 | `output/<RUN_ID>_stage4_review.json` | 操作模式评审通过 |
+| 13 | 合并/导出工具 | 所有阶段输出 | `output/<RUN_ID>.json`、`.xlsx` | 最终验证与导出 |
 
 ## 编排步骤
 
 1. 解析 `RUN_ID`、输入源文档和恢复点。
 2. 对恢复点之后的每个主阶段创建独立 worker，并在 prompt 中显式列出输入、输出、schema 和验证命令。
-3. worker 完成后，编排器运行或复核对应 `check_stage_json.py`；通过后再启动 Review worker。
-4. Stage1 特例：先运行 `prepare_stage1_context.py` 生成 `output/<RUN_ID>_stage1_context_<Function_ID>.json`。随后为每个 `Function_ID` 创建独立 Stage1 worker；每个 worker 只读取当前 context 文件和必要规则，输出 `output/<RUN_ID>_stage1_<Function_ID>_derive_mf.json`。每个片段必须先通过 `check_stage_json.py --stage stage1_slice --fix`。
-5. Stage1R 特例：为每个 `Function_ID` 创建独立 Stage1R worker；每个 worker 只读取当前 context 和当前 Stage1 单功能片段，输出 `output/<RUN_ID>_stage1_<Function_ID>_review.json` 作为人工审查留痕，必要时修正当前 Stage1 单功能片段，并重新运行 `stage1_slice --fix`。所有 Function_ID 的 Stage1R 通过后，才运行 `merge_stage1.py` 合并最终 Stage1，再运行 `merge_stage1_review.py` 合并总 review。Stage1R review 文件不运行严格 schema check；合并脚本只检查 review 文件可解析、可识别 `Function_ID` 且覆盖 Stage0 全部功能。
-6. Stage2 特例：为每个 `Function_ID` 创建独立 Stage2 worker；每个 worker 只读取当前 Stage1 单功能片段和当前功能 Stage0 上下文，输出 `output/<RUN_ID>_stage2_<Function_ID>_mf_vehicle_hazards.json`。每个片段必须通过 `check_stage_json.py --stage stage2_slice --fix`。不要在 Stage2R 前合并最终 Stage2。
-7. Stage2R 特例：为每个 `Function_ID` 创建独立 Stage2R worker；每个 worker 只读取当前 Stage1 单功能片段和当前 Stage2 单功能片段，输出 `output/<RUN_ID>_stage2_<Function_ID>_review.json` 作为人工审查留痕，必要时修正当前 Stage2 单功能片段，并重新运行 `stage2_slice --fix`。所有 Function_ID 的 Stage2R 通过后，才运行 `merge_stage2.py` 合并最终 Stage2，再运行 `merge_stage2_review.py` 合并总 review。
-8. Review worker 通过后才进入下一主阶段；不通过则重跑或修正被评审阶段，再重新 Review。
-9. Stage3 前运行 `prepare_stage3_context.py mf-context --all`，只拆分 Stage2 中产生的 MF；功能背景复用 `output/<RUN_ID>_stage1_context_<Function_ID>.json`。
-10. 对每个 `MF_ID` 创建独立 Stage3A worker；Stage3A 机器校验通过后，创建对应 Stage3AR worker。Stage3AR 不通过则修正或重跑 Stage3A。
-11. Stage3AR 通过后，再为对应 `MF_ID` 创建 Stage3B worker。Stage3B worker 内部仍必须使用真实子 agent 处理 S/E/C、Safety、FTTI 子任务；它不得在自己的总控上下文里做分维度评级。
-12. Stage3B 机器校验通过后，创建 Stage3BR worker；Stage3BR 不通过则重跑对应 Stage3B 维度 batch 并重新合并 SEC。
-13. Stage3BR 通过后，合并每个 MF 的 Stage3A/3B，并运行 `check_stage_json.py --stage stage3 --fix` 作为合并后门禁；ASIL 不一致必须回到 Stage3B 修正，不再调用 `apply_asil_matrix.py` 自动覆盖。
-14. 所有 MF 的 Stage3 合并校验通过后，启动 Stage4 和 Stage4R。
-15. 最后执行合并与 Excel 导出，并返回简洁状态摘要。
+3. Stage0 不创建模型 worker，直接运行 `generate_stage0_function_mapping.py --write-contexts`，再运行 `check_stage_json.py --stage stage0`。
+4. worker 完成后，编排器运行或复核对应 `check_stage_json.py`；通过后再启动 Review worker。Stage0 只有脚本生成和机器校验，不再启动 Stage0R。
+5. Stage1 特例：优先使用 Stage0 脚本生成的 `output/<RUN_ID>_stage1_context_<Function_ID>.json`。如果旧 Stage0 没有 context 文件，再运行 `prepare_stage1_context.py` 补齐。随后为每个 `Function_ID` 创建独立 Stage1 worker；每个 worker 只读取当前 context 文件和必要规则，输出 `output/<RUN_ID>_stage1_<Function_ID>_derive_mf.json`。每个片段必须先通过 `check_stage_json.py --stage stage1_slice --fix`。
+6. Stage1R 特例：为每个 `Function_ID` 创建独立 Stage1R worker；每个 worker 只读取当前 context 和当前 Stage1 单功能片段，输出 `output/<RUN_ID>_stage1_<Function_ID>_review.json` 作为人工审查留痕，必要时修正当前 Stage1 单功能片段，并重新运行 `stage1_slice --fix`。所有 Function_ID 的 Stage1R 通过后，才运行 `merge_stage1.py` 合并最终 Stage1，再运行 `merge_stage1_review.py` 合并总 review。Stage1R review 文件不运行严格 schema check；合并脚本只检查 review 文件可解析、可识别 `Function_ID` 且覆盖 Stage0 全部功能。
+7. Stage2 特例：为每个 `Function_ID` 创建独立 Stage2 worker；每个 worker 只读取当前 Stage1 单功能片段和当前功能 context，输出 `output/<RUN_ID>_stage2_<Function_ID>_mf_vehicle_hazards.json`。每个片段必须通过 `check_stage_json.py --stage stage2_slice --fix`。不要在 Stage2R 前合并最终 Stage2。
+8. Stage2R 特例：为每个 `Function_ID` 创建独立 Stage2R worker；每个 worker 只读取当前 Stage1 单功能片段和当前 Stage2 单功能片段，输出 `output/<RUN_ID>_stage2_<Function_ID>_review.json` 作为人工审查留痕，必要时修正当前 Stage2 单功能片段，并重新运行 `stage2_slice --fix`。所有 Function_ID 的 Stage2R 通过后，才运行 `merge_stage2.py` 合并最终 Stage2，再运行 `merge_stage2_review.py` 合并总 review。
+9. Review worker 通过后才进入下一主阶段；不通过则重跑或修正被评审阶段，再重新 Review。
+10. Stage3 前运行 `prepare_stage3_context.py mf-context --all`，只拆分 Stage2 中产生的 MF；功能背景复用 `output/<RUN_ID>_stage1_context_<Function_ID>.json`。
+11. 对每个 `MF_ID` 创建独立 Stage3A worker；Stage3A 机器校验通过后，创建对应 Stage3AR worker。Stage3AR 不通过则修正或重跑 Stage3A。
+12. Stage3AR 通过后，再为对应 `MF_ID` 创建 Stage3B worker。Stage3B worker 内部仍必须使用真实子 agent 处理 S/E/C、Safety、FTTI 子任务；它不得在自己的总控上下文里做分维度评级。
+13. Stage3B 机器校验通过后，创建 Stage3BR worker；Stage3BR 不通过则重跑对应 Stage3B 维度 batch 并重新合并 SEC。
+14. Stage3BR 通过后，合并每个 MF 的 Stage3A/3B，并运行 `check_stage_json.py --stage stage3 --fix` 作为合并后门禁；ASIL 不一致必须回到 Stage3B 修正，不再调用 `apply_asil_matrix.py` 自动覆盖。
+15. 所有 MF 的 Stage3 合并校验通过后，启动 Stage4 和 Stage4R。
+16. 最后执行合并与 Excel 导出，并返回简洁状态摘要。
 
 ## 并行策略
 
 - 可并行：不同 `Function_ID` 的 Stage1/Stage1R/Stage2/Stage2R；不同 `MF_ID` 的 Stage3A/Stage3AR/Stage3B/Stage3BR；Stage3B 内同一批次的 S/E/C 子任务；Safety 和 FTTI 子任务。
-- 不可并行跨越门禁：Stage1 必须等 Stage0R 通过；Stage2 必须等 Stage1R 通过；Stage3A 必须等 Stage2R 通过；同一 MF 的 Stage3B 必须等 Stage3AR 通过；同一 MF 的 Stage3 合并必须等 Stage3BR 通过；Stage4 必须等所有 Stage3 HARA 通过 `--stage stage3`。
+- 不可并行跨越门禁：Stage1 必须等 Stage0 脚本输出通过机器校验；Stage2 必须等 Stage1R 通过；Stage3A 必须等 Stage2R 通过；同一 MF 的 Stage3B 必须等 Stage3AR 通过；同一 MF 的 Stage3 合并必须等 Stage3BR 通过；Stage4 必须等所有 Stage3 HARA 通过 `--stage stage3`。
 - 并行时也必须创建多个真实 worker。一个 worker 只负责一个 stage、一个 `MF_ID` 或一个批次维度输出文件。
 
 ## 门禁规则
 
-- Review 阶段是进入下一主阶段的必要条件；其中 Stage1R 只做语义评审，不重复替代 Stage1 机器校验，Stage1R review 文件也不作为严格 JSON schema 门禁。
+- Review 阶段是进入下一主阶段的必要条件，但 Stage0 例外：Stage0 由确定性脚本和机器校验承担，不再运行 Stage0R。Stage1R 只做语义评审，不重复替代 Stage1 机器校验，Stage1R review 文件也不作为严格 JSON schema 门禁。
 - 遇到验证 `error` 必须停止并修正；`warning` 需要说明，若影响最终 HARA 质量则修正。
 - 修正后的产物必须写回规范输出路径，保证后续工具读取最新版本。
 - 如果重跑某个阶段，必须重新运行受影响的所有下游验证门禁。
@@ -147,8 +146,11 @@ Agent(
 ## 核心命令
 
 ```text
-python tools/hara/extract_function_doc.py --input <input_path> --out output/<RUN_ID>_source_extraction.json
+python tools/hara/generate_stage0_function_mapping.py --input <input_path> --out output/<RUN_ID>_stage0_function_mapping.json --run-id <RUN_ID> --source-out output/<RUN_ID>_source_extraction.json --write-contexts
+# 或已有 source_extraction 时：
+python tools/hara/generate_stage0_function_mapping.py --source-extraction output/<RUN_ID>_source_extraction.json --out output/<RUN_ID>_stage0_function_mapping.json --run-id <RUN_ID> --write-contexts
 python tools/hara/check_stage_json.py --stage <stage> --json <stage_json> [stage-specific args] --fix
+# 旧 Stage0 文件缺少 context 时才补跑：
 python tools/hara/prepare_stage1_context.py --stage0 output/<RUN_ID>_stage0_function_mapping.json --prefix <RUN_ID> --out-dir output
 python tools/hara/check_stage_json.py --stage stage1_slice --json output/<RUN_ID>_stage1_<Function_ID>_derive_mf.json --stage0 output/<RUN_ID>_stage0_function_mapping.json --function-id <Function_ID> --fix
 python tools/hara/merge_stage1.py --stage0 output/<RUN_ID>_stage0_function_mapping.json --input-dir output --prefix <RUN_ID> --out output/<RUN_ID>_stage1_derive_mf.json

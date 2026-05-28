@@ -9,8 +9,7 @@
 ```text
 hara-orchestrator（只编排，不分析）
   |
-  +-- stage0 子 agent：功能提取
-  +-- stage0r 子 agent：功能提取评审
+  +-- Stage0 确定性脚本：generate_stage0_function_mapping.py
   +-- stage1 子 agent：功能故障生成
   +-- stage1r 子 agent：功能故障评审
   +-- stage2 子 agent：整车危害生成
@@ -53,7 +52,7 @@ hara-orchestrator（只编排，不分析）
 
 ### 2. 每个阶段独立上下文
 
-每个主阶段和 Review 阶段都使用新的子 agent。阶段之间只通过 JSON 文件传递结果，不传递上一个 agent 的自由文本推理。
+除 Stage0 脚本生成外，每个主阶段和 Review 阶段都使用新的子 agent。阶段之间只通过 JSON 文件传递结果，不传递上一个 agent 的自由文本推理。
 
 ### 3. Review 独立于生成
 
@@ -119,11 +118,10 @@ Stage3BR 通过后，`merge_stage3.py` 合并 Stage3A/3B，随后 `check_stage_j
 
 | 阶段 | 子 agent 输入 | 子 agent 输出 |
 |---|---|---|
-| Stage0 | 源文本/文档 | Stage0 JSON |
-| Stage0R | Stage0 JSON + 源文档可选 | Stage0 review JSON + 修正后 Stage0 |
+| Stage0 | 源文档或 source_extraction JSON | Stage0 JSON + Stage1 function context |
 | Stage1 | Stage1 context by Function_ID | Stage1 single-function JSON |
 | Stage1R | Stage1 context + Stage1 single-function JSON | Stage1 review trace + 修正后 Stage1 single-function JSON |
-| Stage2 | Stage1 single-function JSON + current Stage0 context | Stage2 single-function JSON |
+| Stage2 | Stage1 single-function JSON + current Stage1 function context | Stage2 single-function JSON |
 | Stage2R | Stage1 single-function JSON + Stage2 single-function JSON | Stage2 review trace + 修正后 Stage2 single-function JSON |
 | Stage3A | `stage3_context_<MF_ID>.json` | Stage3A scenarios JSON |
 | Stage3AR | Stage3 context + Stage3A JSON + review batch contexts | Stage3A review trace |

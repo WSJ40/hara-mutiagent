@@ -19,14 +19,14 @@ Stage2 只把当前 `Function_ID` 的功能故障转换为整车级危害。不�
 
 - 输入：
   - `output/<RUN_ID>_stage1_<Function_ID>_derive_mf.json`
-  - 可选：`output/<RUN_ID>_stage1_context_<Function_ID>.json`
+  - `output/<RUN_ID>_stage1_context_<Function_ID>.json`
 - 单功能输出：`output/<RUN_ID>_stage2_<Function_ID>_mf_vehicle_hazards.json`
 - 最终输出：`output/<RUN_ID>_stage2_mf_vehicle_hazards.json`，由 Stage2R 修正并复检所有片段后通过 `tools/hara/merge_stage2.py` 合并。
 
 ## 上下文加载
 
 1. 只读取当前 Stage1 单功能片段；不要读取完整 Stage1 合并文件。
-2. 只读取当前功能的 Stage0 `detail_text` 或 Stage1 context。
+2. 只读取当前功能的 Stage1 context；不要读取完整 Stage0。
 3. 读取 `references/json-contracts.md` 确认输出结构。
 4. 读取 `references/stage2-hazard.md` 确认危害映射方法。
 5. 危害库不清楚时，再加载 `knowledge-base/automotive/hara/common/03-hazard.md` 和 `knowledge-base/automotive/hara/common/vehicle_hazards.json`。

@@ -18,27 +18,7 @@
     {
       "Function_ID": "F001",
       "extracted_function_name": "<源文档中的功能名称>",
-      "function_category": "<功能类别>",
-      "remark": "<源文档备注或空字符串>",
-      "function_description": "<功能摘要>",
-      "source_table": "<来源表格/章节或空字符串>",
-      "source_evidence": "<直接证据文本>",
-      "section_id": "<主章节号>",
-      "section_title": "<主章节标题>",
-      "detail_section_ids": [
-        "<绑定到该功能的详细章节号>"
-      ],
-      "detail_text": "<支持下游推理的完整功能细节>",
-      "detail_evidence_blocks": [
-        "<证据块或引用>"
-      ],
-      "is_hara_relevant": true,
-      "exclude_reason": "",
-      "system_hint": "<源文档中的系统线索>",
-      "matched_system": "<匹配到的系统或unknown>",
-      "match_confidence": "high/medium/low",
-      "match_reason": "<匹配理由>",
-      "conflict_notes": ""
+      "detail_text": "<匹配功能标题及其全部子级标题和内容，图片除外>"
     }
   ],
   "review_log": []
@@ -55,20 +35,12 @@
 
 - `Function_ID`
 - `extracted_function_name`
-- `function_category`
-- `remark`
-- `function_description`
-- `source_table`
-- `source_evidence`
-- `section_id`
-- `section_title`
-- `detail_section_ids`
 - `detail_text`
-- `detail_evidence_blocks`
-- `is_hara_relevant`
-- `exclude_reason`
-- `system_hint`
-- `matched_system`
-- `match_confidence`
-- `match_reason`
-- `conflict_notes`
+
+字段含义：
+
+- `Function_ID`：脚本按功能清单顺序生成的连续编号，格式 `F001`、`F002`。
+- `extracted_function_name`：来自“功能清单”表格中列头为“功能”的单元格原文。
+- `detail_text`：从功能文档中匹配到的功能标题及其所有子级标题和内容；不包含图片。找不到匹配章节时填 `nan`，并在 `review_log` 记录 warning。
+
+Stage0 行级字段保持最小化，不再输出类别、备注、证据块、系统匹配等冗余字段。下游 Stage1/2/3 只依赖 `Function_ID`、`extracted_function_name` 和 `detail_text`。

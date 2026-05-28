@@ -43,7 +43,7 @@ Usage:
 Installed paths under the target directory:
   Skills (multi-agent architecture):
   - skills/hara-orchestrator (main entry point)
-  - skills/hara-stage0 / hara-stage0r
+  - skills/hara-stage0
   - skills/hara-stage1 / hara-stage1r
   - skills/hara-stage2 / hara-stage2r
   - skills/hara-stage3a / hara-stage3ar / hara-stage3b / hara-stage3br
@@ -152,7 +152,6 @@ fi
 # Install multi-agent skills
 install_dir "${REPO_ROOT}/skills/hara-orchestrator" "${TARGET_DIR}/skills/hara-orchestrator"
 install_dir "${REPO_ROOT}/skills/hara-stage0" "${TARGET_DIR}/skills/hara-stage0"
-install_dir "${REPO_ROOT}/skills/hara-stage0r" "${TARGET_DIR}/skills/hara-stage0r"
 install_dir "${REPO_ROOT}/skills/hara-stage1" "${TARGET_DIR}/skills/hara-stage1"
 install_dir "${REPO_ROOT}/skills/hara-stage1r" "${TARGET_DIR}/skills/hara-stage1r"
 install_dir "${REPO_ROOT}/skills/hara-stage2" "${TARGET_DIR}/skills/hara-stage2"

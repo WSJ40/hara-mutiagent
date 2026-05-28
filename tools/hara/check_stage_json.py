@@ -305,7 +305,7 @@ def check_stage0(data: Any, errors: list[dict[str, Any]]) -> None:
     function_mapping = rows(data, "function_mapping")
     if not function_mapping:
         errors.append({"stage": "stage0", "error": "function_mapping_empty"})
-    check_required(function_mapping, ["Function_ID", "extracted_function_name"], "stage0", errors)
+    check_required(function_mapping, ["Function_ID", "extracted_function_name", "detail_text"], "stage0", errors)
 
 
 def compact_field_name(value: Any) -> str:

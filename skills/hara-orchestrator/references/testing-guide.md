@@ -11,8 +11,7 @@
 | 要运行的 Stage | 需要的前置文件 |
 |---|---|
 | Stage 0 | 无（输入文档或文本） |
-| Stage 0R | `output/<RUN_ID>_stage0_function_mapping.json` |
-| Stage 1 | `output/<RUN_ID>_stage0_function_mapping.json` |
+| Stage 1 | `output/<RUN_ID>_stage0_function_mapping.json`<br>`output/<RUN_ID>_stage1_context_<Function_ID>.json` |
 | Stage 1R | `output/<RUN_ID>_stage1_context_<Function_ID>.json`<br>`output/<RUN_ID>_stage1_<Function_ID>_derive_mf.json` |
 | Stage 2 | `output/<RUN_ID>_stage1_<Function_ID>_derive_mf.json`<br>`output/<RUN_ID>_stage1_context_<Function_ID>.json` |
 | Stage 2R | `output/<RUN_ID>_stage1_<Function_ID>_derive_mf.json`<br>`output/<RUN_ID>_stage2_<Function_ID>_mf_vehicle_hazards.json` |
@@ -32,6 +31,7 @@
 ```
 
 Orchestrator 会按顺序调用所有生成、Review、校验、合并和导出工具。
+Stage0 是确定性脚本步骤，不再运行 Stage0R。
 
 ### 方式二：直接调用单个 Agent（独立测试）
 
@@ -120,7 +120,7 @@ Stage3B 修正后，应重新运行 `check_stage_json.py --stage stage3b`，再�
 /hara-orchestrator
 
 # 单独运行生成阶段
-/hara-stage0
+python tools/hara/generate_stage0_function_mapping.py --input <function_doc_path> --out output/<RUN_ID>_stage0_function_mapping.json --run-id <RUN_ID> --write-contexts
 /hara-stage1
 /hara-stage2
 /hara-stage3a --run-id EPB_HARA --mf-id EPB_MF_01
@@ -128,7 +128,6 @@ Stage3B 修正后，应重新运行 `check_stage_json.py --stage stage3b`，再�
 /hara-stage4
 
 # 单独运行 Review
-/hara-stage0r
 /hara-stage1r
 /hara-stage2r
 /hara-stage3ar --run-id EPB_HARA --mf-id EPB_MF_01
@@ -143,4 +142,4 @@ Stage4 独立测试时，先用 `generate_stage4_sg.py` 从 Stage3 HARA 派生 S
 1. 独立运行某个 Stage 前，先确认前置文件存在且格式正确。
 2. 同一轮分析中所有阶段应使用相同 `RUN_ID`。
 3. 重新生成某个阶段可能覆盖原文件，先确认只重跑目标 `Function_ID` 或 `MF_ID`。
-4. Review 不建议跳过；Stage3B 必须等 Stage3AR 通过，同一 MF 的 Stage3 合并必须等 Stage3BR 通过，Stage4 必须等所有 Stage3 HARA 合并校验通过。
+4. 除 Stage0 外，Review 不建议跳过；Stage3B 必须等 Stage3AR 通过，同一 MF 的 Stage3 合并必须等 Stage3BR 通过，Stage4 必须等所有 Stage3 HARA 合并校验通过。
